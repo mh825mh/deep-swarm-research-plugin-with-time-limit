@@ -12,6 +12,7 @@
 
 import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
+import TurndownService from "turndown";
 import { ExtractedPage, Outlink } from "../types";
 import {
   DESCRIPTION_FALLBACK_CHARS,
@@ -21,13 +22,19 @@ import {
   FINGERPRINT_HEAD_WORDS,
   FINGERPRINT_MID_WORDS,
   FINGERPRINT_TAIL_WORDS,
-  RELEVANCE_KEYWORD_FRACTION,
   RELEVANCE_TITLE_BONUS,
   RELEVANCE_SNIPPET_BONUS,
 } from "../constants";
 
 const virtualConsole = new VirtualConsole();
 virtualConsole.on("error", () => { });
+
+const turndownService = new TurndownService({
+  headingStyle: "atx",
+  codeBlockStyle: "fenced",
+  hr: "---",
+  bulletListMarker: "-",
+});
 
 /** CSS/style tags to strip before DOM parsing */
 const STRIP_BEFORE_PARSE_RE =
@@ -109,7 +116,7 @@ const BOILERPLATE_SELECTORS: ReadonlyArray<string> = [
 
 /**
  * Strip boilerplate elements from the DOM before Readability processes it.
- * This is THE key improvement for content quality — Readability often
+ * This is THE key improvement for content quality - Readability often
  * includes nav/footer text when these elements are present.
  */
 function stripBoilerplate(doc: Document): void {
@@ -143,6 +150,7 @@ export function extractPage(
   finalUrl: string,
   contentLimit: number,
   maxOutlinks: number = DEFAULT_MAX_OUTLINKS,
+  page: number = 1,
 ): ExtractedPage {
   const cleanedHtml = html.replace(STRIP_BEFORE_PARSE_RE, "");
   const dom = new JSDOM(cleanedHtml, { url: finalUrl, virtualConsole });
@@ -154,7 +162,7 @@ export function extractPage(
   const description = extractDescription(doc);
   const published = extractPublishedDate(doc, finalUrl);
   const outlinks = extractOutlinks(doc, finalUrl, maxOutlinks);
-  const text = extractText(doc, html, contentLimit);
+  const { text, totalLength } = extractText(doc, html, contentLimit, page);
   const wordCount = countWords(text);
 
   return {
@@ -166,6 +174,8 @@ export function extractPage(
     text,
     wordCount,
     outlinks,
+    page,
+    totalPages: Math.ceil(totalLength / contentLimit),
   };
 }
 
@@ -249,20 +259,31 @@ function toIsoDate(raw: string): string | null {
   }
 }
 
-function extractText(doc: Document, rawHtml: string, limit: number): string {
+function extractText(
+  doc: Document,
+  rawHtml: string,
+  limit: number,
+  page: number,
+): { text: string; totalLength: number } {
+  const start = (page - 1) * limit;
+  const end = start + limit;
+
   try {
     const cloned = doc.cloneNode(true) as Document;
-    const article = new Readability(cloned, {
-      serializer: (node: Node) => node.textContent ?? "",
-    }).parse();
+    const article = new Readability(cloned).parse();
 
-    if (article?.textContent) {
-      const cleaned = article.textContent
+    if (article?.content) {
+      const markdown = turndownService.turndown(article.content);
+      const cleaned = markdown
         .replace(/[ \t]+/g, " ")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
-      if (cleaned.length > MIN_READABILITY_TEXT_LEN)
-        return cleaned.slice(0, limit);
+      if (cleaned.length > MIN_READABILITY_TEXT_LEN) {
+        return {
+          text: cleaned.slice(start, end),
+          totalLength: cleaned.length,
+        };
+      }
     }
   } catch {
     /* fall through */
@@ -279,7 +300,10 @@ function extractText(doc: Document, rawHtml: string, limit: number): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  return stripped.slice(0, limit);
+  return {
+    text: stripped.slice(start, end),
+    totalLength: stripped.length,
+  };
 }
 
 function extractOutlinks(
@@ -353,7 +377,7 @@ export function contentFingerprint(text: string): string {
 }
 
 /**
- * Computes a 0–1 relevance score measuring how on-topic a page is.
+ * Computes a 0-1 relevance score measuring how on-topic a page is.
  */
 export function computeRelevance(
   text: string,

@@ -20,6 +20,8 @@ export interface ExtractedPage {
   readonly text: string;
   readonly wordCount: number;
   readonly outlinks: ReadonlyArray<Outlink>;
+  readonly page?: number;
+  readonly totalPages?: number;
 }
 
 export interface Outlink {
@@ -96,8 +98,8 @@ export interface SwarmTask {
   readonly linkCrawlDepth: number;
   readonly queryMutationThreshold: number;
   readonly enableLocalSources: boolean;
-  readonly localCollectionIds?: ReadonlyArray<string>;
-  readonly roleCollectionMap?: ReadonlyMap<string, ReadonlyArray<string>>;
+  readonly localLibraryIds?: ReadonlyArray<string>;
+  readonly roleLibraryMap?: ReadonlyMap<string, ReadonlyArray<string>>;
 }
 
 /** Result produced by a single swarm worker. */
@@ -128,6 +130,8 @@ export interface CrawledSource {
   readonly tier: SourceTier;
   readonly relevanceScore: number;
   readonly origin: SourceOrigin;
+  readonly page?: number;
+  readonly totalPages?: number;
 }
 
 export interface AgentMessage {
@@ -190,6 +194,8 @@ export interface ReportSource {
   readonly tier: SourceTier;
   readonly relevanceScore: number;
   readonly origin: SourceOrigin;
+  readonly page?: number;
+  readonly totalPages?: number;
 }
 
 export interface CompiledReport {
@@ -213,8 +219,8 @@ export interface ResearchConfig {
   readonly enableAIPlanning: boolean;
   readonly safeSearch: "strict" | "moderate" | "off";
   readonly enableLocalSources: boolean;
-  readonly localCollectionIds?: ReadonlyArray<string>;
-  readonly roleCollectionMap?: ReadonlyMap<string, ReadonlyArray<string>>;
+  readonly localLibraryIds?: ReadonlyArray<string>;
+  readonly roleLibraryMap?: ReadonlyMap<string, ReadonlyArray<string>>;
 }
 
 export interface ResearchResult {

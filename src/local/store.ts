@@ -1,41 +1,31 @@
 /**
  * @file local/store.ts
- * Enhanced RAG document store with multi-library support.
- *
- * Major features:
- * - MULTIPLE LIBRARIES: Named libraries (like GPT4All's multi-library model)
- *   with metadata, tags, and priority tiers. Each library maps to a folder
- *   and can be tagged for automatic worker routing.
- * - PROGRESSIVE SOURCE TIERS: Libraries are ranked by priority
- *   (proprietary > internal > reference > general) so local knowledge
- *   is preferred before falling back to web.
- * - BM25 SCORING: Proper BM25 ranking (replaces basic TF-IDF) with
- *   field boosting on file names and section headings.
- * - SMART CHUNKING: Section-aware splitting that respects headings,
- *   paragraphs, and code blocks. Configurable overlap.
- * - CONTEXTUAL RETRIEVAL: Parent and sibling chunk retrieval for
- *   richer context windows around matched chunks.
- * - PERSISTENCE: Save/load index to disk JSON so re-indexing
- *   is only needed when files change.
- * - FILE METADATA: Tracks file type, modification date, size,
- *   and custom user tags per file.
- * - HYBRID SEARCH: Combines BM25 keyword matching with n-gram
- *   fuzzy matching for better recall on partial/misspelled terms.
- *
- * Designed to run entirely on-device with zero external dependencies —
- * no vector database, no embedding model needed.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { JSDOM } from "jsdom";
+import TurndownService from "turndown";
 
-let PDFParseRef: any = null;
-try {
-  const pdfMod = require("pdf-parse");
-  PDFParseRef = pdfMod.PDFParse ?? pdfMod.default ?? pdfMod;
-} catch {
-  /* pdf-parse not available */
+import { installBrowserPolyfills } from "../net/pdf-extractor";
+
+const turndownService = new TurndownService();
+
+let _storePDFParse: any = null;
+let _storePDFAttempted = false;
+
+function getStorePDFParse(): any {
+  if (_storePDFAttempted) return _storePDFParse;
+  _storePDFAttempted = true;
+  installBrowserPolyfills(); // must precede require("pdf-parse")
+  try {
+    const pdfMod = require("pdf-parse");
+    _storePDFParse = pdfMod.PDFParse ?? pdfMod.default ?? pdfMod;
+  } catch {
+    /* pdf-parse unavailable in this environment */
+  }
+  return _storePDFParse;
 }
 
 /** Priority tiers for progressive source retrieval. */
@@ -150,8 +140,6 @@ interface PersistedChunk {
   readonly fileType: string;
 }
 
-export type LocalCollection = LocalLibrary;
-
 const MIN_CHUNK_WORDS = 15;
 const MAX_CHUNKS_PER_FILE = 300;
 const PERSIST_VERSION = 2;
@@ -172,7 +160,7 @@ const PRIORITY_ORDER: Record<LibraryPriority, number> = {
   general: 3,
 };
 
-/** Worker role → library tag mapping for auto-routing. */
+/** Worker role -> library tag mapping for auto-routing. */
 const ROLE_TAG_MAP: Readonly<Record<string, ReadonlyArray<LibraryTag>>> = {
   academic: ["academic", "technical"],
   regulatory: ["legal", "policy"],
@@ -547,18 +535,34 @@ function pushChunks(
 }
 
 function stripHtmlTags(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  try {
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+
+    const scripts = doc.querySelectorAll("script, style, nav, footer, header");
+    for (const el of Array.from(scripts)) {
+      el.remove();
+    }
+
+    return turndownService
+      .turndown(doc.body.innerHTML)
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  } catch {
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 }
 
 function cleanPdfText(raw: string): string {
@@ -578,6 +582,7 @@ async function readFileAsText(filePath: string): Promise<string | null> {
     const ext = path.extname(filePath).toLowerCase();
 
     if (ext === ".pdf") {
+      const PDFParseRef = getStorePDFParse();
       if (!PDFParseRef) return null;
       try {
         const buffer = fs.readFileSync(filePath);
@@ -740,39 +745,6 @@ export class LocalDocumentStore {
   private readonly chunks = new Map<string, DocumentChunk>();
   private readonly libraryChunks = new Map<string, Set<string>>();
   private readonly bm25 = new BM25Index();
-
-  getCollections(): ReadonlyArray<LocalLibrary> {
-    return this.getLibraries();
-  }
-
-  getCollection(id: string): LocalLibrary | undefined {
-    return this.getLibrary(id);
-  }
-
-  hasCollections(): boolean {
-    return this.libraries.size > 0;
-  }
-
-  async indexCollection(
-    name: string,
-    folderPath: string,
-    chunkSize: number,
-    onProgress?: (message: string) => void,
-  ): Promise<LocalLibrary> {
-    return this.indexLibrary(
-      name,
-      folderPath,
-      "",
-      "general",
-      ["general"],
-      chunkSize,
-      onProgress,
-    );
-  }
-
-  removeCollection(id: string): boolean {
-    return this.removeLibrary(id);
-  }
 
   getLibraries(): ReadonlyArray<LocalLibrary> {
     return Array.from(this.libraries.values()).sort(
@@ -943,7 +915,7 @@ export class LocalDocumentStore {
 
     onProgress?.(
       `Library "${name}" ready: ${indexedFiles} files, ${chunkIds.size} chunks, ` +
-        `~${totalWords.toLocaleString()} words [${priority}]`,
+      `~${totalWords.toLocaleString()} words [${priority}]`,
     );
 
     return library;
@@ -988,9 +960,9 @@ export class LocalDocumentStore {
 
   listAll(
     maxResults: number = 100,
-    collectionIds?: ReadonlyArray<string>,
+    libraryIds?: ReadonlyArray<string>,
   ): ReadonlyArray<LocalSearchHit> {
-    const targetLibs = collectionIds ? new Set(collectionIds) : undefined;
+    const targetLibs = libraryIds ? new Set(libraryIds) : undefined;
     const results: LocalSearchHit[] = [];
 
     for (const chunk of this.chunks.values()) {
@@ -1006,9 +978,9 @@ export class LocalDocumentStore {
   search(
     query: string,
     maxResults: number = 10,
-    collectionIds?: ReadonlyArray<string>,
+    libraryIds?: ReadonlyArray<string>,
   ): ReadonlyArray<LocalSearchHit> {
-    return this.searchLibraries(query, maxResults, collectionIds);
+    return this.searchLibraries(query, maxResults, libraryIds);
   }
 
   searchLibraries(
@@ -1078,10 +1050,10 @@ export class LocalDocumentStore {
     query: string,
     role: string,
     maxResults: number = 8,
-    roleCollectionMap?: ReadonlyMap<string, ReadonlyArray<string>>,
+    roleLibraryMap?: ReadonlyMap<string, ReadonlyArray<string>>,
   ): ReadonlyArray<LocalSearchHit> {
     const targetIds =
-      roleCollectionMap?.get(role) ?? this.findLibrariesForRole(role);
+      roleLibraryMap?.get(role) ?? this.findLibrariesForRole(role);
     return this.searchLibraries(query, maxResults, targetIds, true);
   }
 
@@ -1271,7 +1243,6 @@ export class LocalDocumentStore {
     totalWords: number;
     uniqueTerms: number;
     byPriority: Record<string, number>;
-    collections: number;
   } {
     let totalWords = 0;
     const byPriority: Record<string, number> = {};
@@ -1288,7 +1259,6 @@ export class LocalDocumentStore {
 
     return {
       libraries: this.libraries.size,
-      collections: this.libraries.size,
       totalChunks: this.chunks.size,
       totalWords,
       uniqueTerms: uniqueTerms.size,

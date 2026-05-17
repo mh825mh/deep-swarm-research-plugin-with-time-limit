@@ -63,15 +63,28 @@ export function buildDDGHeaders(): Record<string, string> {
   return { "User-Agent": randomUA() };
 }
 
-export function fetchInsecure(
+export async function fetchInsecure(
   url: string,
   headers: Record<string, string>,
   signal: AbortSignal,
+  body?: string,
   redirectsLeft: number = 5,
 ): Promise<string> {
-  return fetchInsecureRaw(url, headers, signal, redirectsLeft).then((r) =>
-    r.data.toString("utf-8"),
-  );
+  try {
+    const res = await fetchInsecureRaw(url, headers, signal, body, redirectsLeft);
+    return res.data.toString("utf-8");
+  } catch (err) {
+    if (url.startsWith("https://") && !signal.aborted) {
+      const httpUrl = url.replace("https://", "http://");
+      try {
+        const res = await fetchInsecureRaw(httpUrl, headers, signal, body, redirectsLeft);
+        return res.data.toString("utf-8");
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }
 
 export interface InsecureRawResult {
@@ -83,6 +96,7 @@ export function fetchInsecureRaw(
   url: string,
   headers: Record<string, string>,
   signal: AbortSignal,
+  body?: string,
   redirectsLeft: number = 5,
 ): Promise<InsecureRawResult> {
   return new Promise((resolve, reject) => {
@@ -101,9 +115,11 @@ export function fetchInsecureRaw(
         hostname: parsed.hostname,
         port: parsed.port || (isHttps ? 443 : 80),
         path: parsed.pathname + parsed.search,
-        method: "GET",
+        method: body ? "POST" : "GET",
         headers: { ...headers, "Accept-Encoding": "identity" },
         rejectUnauthorized: false,
+        timeout: FETCH_TIMEOUT_MS,
+        family: 4, // IPv4
       },
       (res) => {
         const sc = res.statusCode ?? 0;
@@ -119,6 +135,7 @@ export function fetchInsecureRaw(
             new URL(location, url).href,
             headers,
             signal,
+            body,
             redirectsLeft - 1,
           ).then(resolve, reject);
           return;
@@ -148,6 +165,9 @@ export function fetchInsecureRaw(
       { once: true },
     );
     req.on("error", reject);
+    if (body) {
+      req.write(body);
+    }
     req.end();
   });
 }
@@ -243,20 +263,18 @@ async function fetchDirect(
       if (isTls) {
         try {
           const raw = await fetchInsecureRaw(url, headers, signal);
-          if (isBinaryContentType(raw.contentType)) {
-            return {
-              html: "",
-              finalUrl: url,
-              contentType: raw.contentType,
-              rawBuffer: raw.data,
-            };
-          }
-          return {
-            html: raw.data.toString("utf-8"),
-            finalUrl: url,
-            contentType: raw.contentType,
-          };
+          return handleInsecureResult(raw, url);
         } catch (tlsErr) {
+          if (url.startsWith("https://") && !signal.aborted) {
+            const httpUrl = url.replace("https://", "http://");
+            try {
+              const raw = await fetchInsecureRaw(httpUrl, headers, signal);
+              return handleInsecureResult(raw, httpUrl);
+            } catch {
+              lastError = tlsErr;
+              break;
+            }
+          }
           lastError = tlsErr;
           break;
         }
@@ -270,6 +288,25 @@ async function fetchDirect(
   }
 
   throw new Error(`Failed to fetch ${url}: ${errorMessage(lastError)}`);
+}
+
+function handleInsecureResult(
+  raw: InsecureRawResult,
+  finalUrl: string,
+): FetchResult {
+  if (isBinaryContentType(raw.contentType)) {
+    return {
+      html: "",
+      finalUrl,
+      contentType: raw.contentType,
+      rawBuffer: raw.data,
+    };
+  }
+  return {
+    html: raw.data.toString("utf-8"),
+    finalUrl,
+    contentType: raw.contentType,
+  };
 }
 
 /**

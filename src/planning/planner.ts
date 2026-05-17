@@ -118,7 +118,7 @@ Each worker needs:
 
 Rules:
 - Output ${DECOMPOSITION_MIN_WORKERS} to ${profile.maxDecompositionWorkers} workers
-- Tailor the workers to THIS specific topic — not generic roles
+- Tailor the workers to THIS specific topic - not generic roles
 - Queries must be highly specific to the topic and each worker's assignment
 - Generate MORE queries for broader or more complex topics
 - Budget weights must roughly sum to 1.0
@@ -199,25 +199,25 @@ function makeRolePlanPrompt(
   profile: DepthProfile,
 ): string {
   const roleDescriptions: Readonly<Record<WorkerRole, string>> = {
-    breadth: "broad coverage — many different angles, facts, and sub-topics",
+    breadth: "broad coverage - many different angles, facts, and sub-topics",
     depth:
-      "deep dive — mechanisms, how it works, technical detail, and evidence",
+      "deep dive - mechanisms, how it works, technical detail, and evidence",
     recency:
-      "recent developments — 2024-2026+ news, updates, and latest research",
+      "recent developments - 2024-2026+ news, updates, and latest research",
     academic:
-      "academic and scientific sources — peer-reviewed studies, journals, authoritative papers",
+      "academic and scientific sources - peer-reviewed studies, journals, authoritative papers",
     critical:
-      "critical analysis — limitations, counterarguments, criticism, controversy, drawbacks",
+      "critical analysis - limitations, counterarguments, criticism, controversy, drawbacks",
     statistical:
-      "statistics and data — numbers, percentages, datasets, surveys, market sizes, quantitative evidence",
+      "statistics and data - numbers, percentages, datasets, surveys, market sizes, quantitative evidence",
     regulatory:
-      "regulatory and policy — laws, regulations, government policies, compliance, standards, guidelines",
+      "regulatory and policy - laws, regulations, government policies, compliance, standards, guidelines",
     technical:
-      "technical deep-dive — implementation details, specifications, architecture, engineering approaches",
+      "technical deep-dive - implementation details, specifications, architecture, engineering approaches",
     primary:
-      "primary sources — original reports, official statements, first-hand accounts, press releases, white papers",
+      "primary sources - original reports, official statements, first-hand accounts, press releases, white papers",
     comparative:
-      "comparative analysis — vs alternatives, head-to-head comparisons, benchmarks, trade-offs, pros and cons",
+      "comparative analysis - vs alternatives, head-to-head comparisons, benchmarks, trade-offs, pros and cons",
   };
 
   const focus = focusAreas.length
@@ -234,7 +234,7 @@ Generate exactly ${profile.maxQueriesPerWorker} highly specific, diverse search 
 Rules:
 - Each query must be different from the others
 - Use natural language (as a human would type into a search engine)
-- Be specific to the role — ${roleDescriptions[role]}
+- Be specific to the role - ${roleDescriptions[role]}
 - Vary query structure: some factual, some comparative, some recent
 - Return ONLY the queries, one per line, no numbering, no extra text
 
@@ -317,7 +317,7 @@ export async function buildQueryPlan(
   let dynamicSpecs: ReadonlyArray<DynamicWorkerSpec> | undefined;
 
   if (useAI) {
-    status("AI task decomposition — analysing topic for specialised workers…");
+    status("AI task decomposition - analysing topic for specialised workers…");
     const specs = await aiDecompose(topic, focusAreas, status, profile);
 
     if (specs && specs.length >= DECOMPOSITION_MIN_WORKERS) {
@@ -396,7 +396,7 @@ export async function summariseFindings(
     .slice(0, 20)
     .map(
       (s, i) =>
-        `[${i + 1}] ${s.workerLabel}: ${s.title} — ${s.text.slice(0, FINDINGS_SUMMARY_SOURCE_CHARS)}`,
+        `[${i + 1}] ${s.workerLabel}: ${s.title} - ${s.text.slice(0, FINDINGS_SUMMARY_SOURCE_CHARS)}`,
     )
     .join("\n\n");
 
@@ -502,7 +502,7 @@ export async function buildAdaptiveGapFill(
 ): Promise<ReadonlyArray<AdaptiveGapPlan>> {
   const gaps = detectGaps(coveredIds);
   if (gaps.length === 0) {
-    status("All research dimensions covered — no gap queries needed");
+    status("All research dimensions covered - no gap queries needed");
     return [];
   }
 
@@ -557,7 +557,7 @@ ${group.dimLabels.join(", ")}
 ${followUpContext.length > 0 ? `Previous round suggested exploring:\n${followUpContext.join("\n")}\n` : ""}
 Generate ${queryCount} specific search queries to fill these gaps.
 The queries should be best suited for a ${role} research agent.
-Make queries diverse — cover different angles and phrasings.
+Make queries diverse - cover different angles and phrasings.
 Return ONLY the queries, one per line.
 
 Queries:`;
@@ -636,7 +636,7 @@ function extractKeywords(topic: string): ReadonlyArray<string> {
 
 function shortenTopic(topic: string): string {
   const colonIdx = topic.indexOf(":");
-  const dashIdx = topic.indexOf(" — ");
+  const dashIdx = topic.indexOf(" - ");
   const sepIdx = colonIdx > 3 ? colonIdx : dashIdx > 3 ? dashIdx : -1;
 
   let core: string;

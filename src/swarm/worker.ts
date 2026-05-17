@@ -87,13 +87,14 @@ export async function runWorker(
 
   const roleTag = `[${task.label}]`;
   status(
-    `${roleTag} Starting — ${task.queries.length} queries, budget: ${task.pageBudget} pages` +
+    `${roleTag} Starting - ${task.queries.length} queries, budget: ${task.pageBudget} pages` +
     (task.extraEngines.length > 0
       ? `, engines: DDG+${task.extraEngines.join("+")}`
       : ""),
   );
 
   if (task.enableLocalSources) {
+    console.log("Local sources:", task.localLibraryIds);
     const localBudget = Math.max(2, Math.ceil(task.pageBudget * 0.3));
     const localSources = harvestLocalSources(
       task.queries,
@@ -101,8 +102,8 @@ export async function runWorker(
       task.label,
       localBudget,
       task.contentLimit,
-      task.localCollectionIds,
-      task.roleCollectionMap,
+      task.localLibraryIds,
+      task.roleLibraryMap,
     );
 
     if (localSources.length > 0) {
@@ -112,6 +113,7 @@ export async function runWorker(
         state.addHash(fp);
         sources.push(src);
       }
+      console.log(`${roleTag} Local sources: ${localSources.length} chunks from document collections`)
       status(
         `${roleTag} Local sources: ${localSources.length} chunks from document collections`,
       );
@@ -129,6 +131,7 @@ export async function runWorker(
     if (signal.aborted) break;
 
     let ddgHits: ReadonlyArray<import("../types").SearchHit> = [];
+    console.log(`(${roleTag}) DDG query: "${query}" (pages: ${task.searchPages})`);
 
     try {
       if (task.searchPages > 1) {
@@ -151,19 +154,23 @@ export async function runWorker(
       }
       for (const h of ddgHits) allHits.push({ ...h, query });
       queriesExecuted.push(query);
+      console.log(`(${roleTag}) DDG: "${query}" -> ${ddgHits.length} results`);
       status(
-        `${roleTag} DDG: "${query}" → ${ddgHits.length} results${task.searchPages > 1 ? ` (${task.searchPages}pg)` : ""}`,
+        `${roleTag} DDG: "${query}" -> ${ddgHits.length} results${task.searchPages > 1 ? ` (${task.searchPages}pg)` : ""}`,
       );
     } catch (err: unknown) {
       if (isAbortError(err)) break;
-      warn(`${roleTag} DDG failed: "${query}" — ${errorMessage(err)}`);
+      console.warn(`(${roleTag}) DDG failed: "${query}" - ${errorMessage(err)}`);
+      warn(`(${roleTag}) DDG failed: "${query}" - ${errorMessage(err)}`);
       errors.push(`ddg:"${query}": ${errorMessage(err)}`);
     }
 
     if (ddgHits.length < task.queryMutationThreshold && !signal.aborted) {
+      console.log(`(${roleTag}) DDG mutation: "${query}"`);
       for (let attempt = 0; attempt < 2; attempt++) {
         const mutated = mutateQuery(query, attempt);
         if (!mutated) break;
+        console.log(`(${roleTag}) DDG mutation attempt ${attempt}: "${mutated}"`);
         try {
           const mutHits = await searchDDG(
             mutated,
@@ -176,7 +183,7 @@ export async function runWorker(
             for (const h of mutHits) allHits.push({ ...h, query: mutated });
             queriesExecuted.push(mutated);
             status(
-              `${roleTag} Mutated: "${mutated}" → ${mutHits.length} results`,
+              `${roleTag} Mutated: "${mutated}" -> ${mutHits.length} results`,
             );
             break;
           }
@@ -187,7 +194,9 @@ export async function runWorker(
     }
 
     if (task.extraEngines.length > 0 && !signal.aborted) {
-      try {
+      console.log(`(${roleTag}) Extra engines: ${task.extraEngines.join("+")}`);
+      console.log(`(${roleTag}) Extra engines query: "${query}" (pages: ${task.searchPages})`);
+           try {
         const extraHits = await multiEngineSearch(
           query,
           Math.min(task.searchResultsPerQuery, 8),
@@ -198,7 +207,7 @@ export async function runWorker(
         for (const h of extraHits) allHits.push({ ...h, query });
         if (extraHits.length > 0) {
           status(
-            `${roleTag} +${task.extraEngines.join("+")} → ${extraHits.length} extra results`,
+            `${roleTag} +${task.extraEngines.join("+")} -> ${extraHits.length} extra results`,
           );
         }
       } catch {
@@ -317,7 +326,7 @@ export async function runWorker(
     }
   }
 
-  status(`${roleTag} Done — ${sources.length} sources collected`);
+  status(`${roleTag} Done - ${sources.length} sources collected`);
   return {
     taskId: task.id,
     role: task.role,
@@ -377,7 +386,7 @@ async function fetchBatch(
       if (result.status === "rejected") {
         if (!isAbortError(result.reason)) {
           warn(
-            `${tag} Failed: ${truncUrl(candidate.url)} — ${errorMessage(result.reason)}`,
+            `${tag} Failed: ${truncUrl(candidate.url)} - ${errorMessage(result.reason)}`,
           );
           errors.push(`fetch:${candidate.url}: ${errorMessage(result.reason)}`);
         }
@@ -540,6 +549,8 @@ async function fetchAndExtract(
     tier: tier as SourceTier,
     relevanceScore,
     origin: "web" as const,
+    page: page.page,
+    totalPages: page.totalPages,
   };
 }
 

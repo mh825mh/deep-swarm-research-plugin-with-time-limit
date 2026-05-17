@@ -3,6 +3,9 @@
  * Registers all four tools with LM Studio.
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { tool, Tool, ToolsProviderController } from "@lmstudio/sdk";
 import { z } from "zod";
 
@@ -12,7 +15,7 @@ import { ResearchConfig } from "./types";
 import { DepthPreset, getDepthProfile } from "./constants";
 import { searchDDG } from "./net/ddg";
 import { fetchPage } from "./net/http";
-import { extractPage, computeRelevance } from "./net/extractor";
+import { extractPage } from "./net/extractor";
 import {
   isPdfUrl,
   isPdfContentType,
@@ -26,18 +29,15 @@ import {
   CONTENT_LIMIT_MIN,
   CONTENT_LIMIT_MAX,
   CONTENT_LIMIT_EXTENDED,
-  CONTENT_LIMIT_DEFAULT,
   SEARCH_RESULTS_MIN,
   SEARCH_RESULTS_MAX,
 } from "./constants";
 
 import {
   getGlobalStore,
-  LocalCollection,
   LibraryPriority,
   LibraryTag,
 } from "./local/store";
-import { isLocalUrl } from "./local/search";
 
 function readConfig(ctl: ToolsProviderController) {
   const c = ctl.getPluginConfig(configSchematics);
@@ -70,7 +70,7 @@ export async function toolsProvider(
 ): Promise<Tool[]> {
   const deepResearchTool = tool({
     name: "Deep Research",
-    description: `Performs autonomous, multi-round deep web research using a Kimi-style Agent Swarm with AI-powered synthesis.
+    description: `Performs autonomous, multi-round deep web research using a Agent Swarm with AI-powered synthesis.
 
 HOW IT WORKS:
   1. AI TASK DECOMPOSITION: The loaded model analyses the topic and dynamically creates specialised worker agents with roles. Each worker gets custom queries tailored to its assignment.
@@ -85,7 +85,7 @@ HOW IT WORKS:
 
   4. ADAPTIVE GAP-FILL: Coverage gaps are filled by TARGETED workers (e.g., Academic worker for missing evidence, Critical worker for missing controversy).
 
-  5. ADAPTIVE SOURCE COLLECTION: No hard source cap — each worker has its own page budget that scales with depth preset. Collection stops only when: all research dimensions are covered, a round yields zero new sources (stagnation), or all rounds are exhausted.
+  5. ADAPTIVE SOURCE COLLECTION: No hard source cap - each worker has its own page budget that scales with depth preset. Collection stops only when: all research dimensions are covered, a round yields zero new sources (stagnation), or all rounds are exhausted.
 
   6. AI NARRATIVE SYNTHESIS: The loaded model writes a coherent, multi-paragraph research analysis with inline citations.
 
@@ -111,14 +111,14 @@ WHAT YOU GET:
   - Numbered citation index
 
 USE THIS TOOL for thorough, cited research. Not for simple lookups.
-When Local Document Sources is enabled in settings, your indexed RAG libraries are searched progressively (proprietary → internal → reference → general) alongside the web — each worker draws from your most trusted data first, then fills gaps from public sources. Use 'RAG Add Library' to create libraries with priority tiers and auto-routing tags.`,
+When Local Document Sources is enabled in settings, your indexed RAG libraries are searched progressively (proprietary -> internal -> reference -> general) alongside the web - each worker draws from your most trusted data first, then fills gaps from public sources. Use 'RAG Add Library' to create libraries with priority tiers and auto-routing tags.`,
     parameters: {
       topic: z
         .string()
         .min(3)
         .describe(
           "The research topic or question. Be specific. " +
-            "Example: 'long-term safety profile of GLP-1 receptor agonists' rather than just 'weight loss drugs'.",
+          "Example: 'long-term safety profile of GLP-1 receptor agonists' rather than just 'weight loss drugs'.",
         ),
       focusAreas: z
         .array(z.string())
@@ -126,18 +126,18 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Optional sub-topics or angles to emphasise across all worker queries. " +
-            "Example: ['side effects', 'clinical trial data', 'FDA approval status']",
+          "Example: ['side effects', 'clinical trial data', 'FDA approval status']",
         ),
       depthOverride: z
         .enum(["shallow", "standard", "deep", "deeper", "exhaustive"])
         .optional()
         .describe(
           "Override depth for this call only. " +
-            "shallow = 1 round (~10-25 sources, fast) · " +
-            "standard = 3 rounds (~30-60 sources) · " +
-            "deep = 5 rounds (~60-120 sources, thorough) · " +
-            "deeper = 10 rounds (~100-200+ sources, very thorough) · " +
-            "exhaustive = 15 rounds (200+ sources, maximum depth)",
+          "shallow = 1 round (~10-25 sources, fast) · " +
+          "standard = 3 rounds (~30-60 sources) · " +
+          "deep = 5 rounds (~60-120 sources, thorough) · " +
+          "deeper = 10 rounds (~100-200+ sources, very thorough) · " +
+          "exhaustive = 15 rounds (200+ sources, maximum depth)",
         ),
       contentLimitOverride: z
         .number()
@@ -147,7 +147,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Override chars-per-page for this call only. " +
-            "Higher = richer context per source but slower overall.",
+          "Higher = richer context per source but slower overall.",
         ),
     },
 
@@ -206,7 +206,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
   });
 
   const researchSearchTool = tool({
-    name: "Research Search",
+    name: "Search",
     description:
       "Search DuckDuckGo and return scored, ranked results with domain authority tiers. " +
       "Each result includes a domain score (0-100), source tier (academic/government/news/etc.), " +
@@ -218,7 +218,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .string()
         .min(2)
         .describe(
-          "Search query — use natural language as you would type into a search engine.",
+          "Search query - use natural language as you would type into a search engine.",
         ),
       maxResults: z
         .number()
@@ -263,7 +263,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
   });
 
   const researchReadPageTool = tool({
-    name: "Research Read Page",
+    name: "Read Page",
     description:
       "Visit a website URL and return cleanly extracted text using Mozilla Readability " +
       "(the same engine as Firefox Reader Mode). " +
@@ -273,11 +273,21 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "domain authority score, source tier, and top outbound links. " +
       "For PDFs, embedded images are saved to temp files and returned as file paths " +
       "with dimensions and size metadata (not inline base64). " +
-      "Use this to read individual pages. For reading multiple URLs at once use 'Research Multi-Read'." +
+      "Use this to read individual pages. For reading multiple URLs at once use 'Multi-Read'." +
       "with dimensions and size metadata (not inline base64). " +
       "Don't use this for reading local files.",
     parameters: {
       url: z.string().url().describe("The URL to visit and read."),
+      page: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "The page number to read (starting from 1). Use this to read long documents " +
+          "in chunks. If the returned 'totalPages' is greater than 'page', you can " +
+          "call this tool again with the next page number to continue reading.",
+        ),
       contentLimit: z
         .number()
         .int()
@@ -286,15 +296,15 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Maximum characters to extract from the page " +
-            "(default: plugin content-per-page setting).",
+          "(default: plugin content-per-page setting).",
         ),
     },
 
-    implementation: async ({ url, contentLimit }, { status, warn, signal }) => {
+    implementation: async ({ url, page: pageNum = 1, contentLimit }, { status, warn, signal }) => {
       const cfg = readConfig(ctl);
       const limit = contentLimit ?? cfg.contentLimitPerPage;
 
-      status(`Reading: ${url}`);
+      status(`Reading: ${url} (page ${pageNum})`);
 
       try {
         const fetchResult = await fetchPage(url, signal);
@@ -311,7 +321,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         let images: ReadonlyArray<PdfImage> = [];
 
         if (isPdf && fetchResult.rawBuffer) {
-          status("Found PDF — extracting contents");
+          status(`Found PDF - extracting contents (page ${pageNum})`);
           const pdfResult = await extractPdf(
             fetchResult.rawBuffer,
             url,
@@ -319,6 +329,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
             limit,
             true,
             20,
+            pageNum,
           );
           page = pdfResult;
           images = pdfResult.images;
@@ -327,7 +338,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
           fetchResult.html &&
           fetchResult.html.startsWith("%PDF")
         ) {
-          status("Found PDF — extracting contents");
+          status(`Found PDF - extracting contents (page ${pageNum})`);
           const buf = Buffer.from(fetchResult.html, "binary");
           const pdfResult = await extractPdf(
             buf,
@@ -336,11 +347,12 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
             limit,
             true,
             20,
+            pageNum,
           );
           page = pdfResult;
           images = pdfResult.images;
         } else {
-          page = extractPage(fetchResult.html, url, finalUrl, limit);
+          page = extractPage(fetchResult.html, url, finalUrl, limit, undefined, pageNum);
         }
 
         const scored = scoreCandidate(
@@ -363,6 +375,8 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
           domainScore: scored.domainScore,
           tier: scored.tier,
           content: page.text,
+          page: page.page,
+          totalPages: page.totalPages,
           topLinks: page.outlinks.slice(0, 10).map((l) => ({
             text: l.text,
             href: l.href,
@@ -384,7 +398,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
           const imageNote = images
             .map(
               (img, idx) =>
-                `[Image ${idx + 1} on page ${img.page}: ${img.width}×${img.height}, ${Math.round(img.byteSize / 1024)} KB — saved to ${img.filePath}]`,
+                `[Image ${idx + 1} on page ${img.page}: ${img.width}×${img.height}, ${Math.round(img.byteSize / 1024)} KB - saved to ${img.filePath}]`,
             )
             .join("\n");
           result.content =
@@ -404,10 +418,10 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
   });
 
   const researchMultiReadTool = tool({
-    name: "Research Multi-Read",
+    name: "Multi-Read",
     description:
       "Fetch up to 10 URLs concurrently (3 at a time) and return extracted text " +
-      "and metadata for all of them. Automatically handles PDF URLs — extracts " +
+      "and metadata for all of them. Automatically handles PDF URLs - extracts " +
       "clean text instead of returning garbled binary data. Returns domain authority " +
       "score, publication date, and word count per page. " +
       "Use this when you already have a list of URLs and want to read them all " +
@@ -426,7 +440,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Maximum characters to extract per page " +
-            "(default: plugin content-per-page setting).",
+          "(default: plugin content-per-page setting).",
         ),
     },
 
@@ -437,7 +451,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       const cfg = readConfig(ctl);
       const limit = contentLimit ?? cfg.contentLimitPerPage;
 
-      status(`Reading ${urls.length} page(s) — 3 at a time…`);
+      status(`Reading ${urls.length} page(s) - 3 at a time…`);
 
       const CONCURRENCY = 3;
       const results: Array<{
@@ -499,6 +513,8 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
               domainScore: scored.domainScore,
               tier: scored.tier,
               content: page.text,
+              page: page.page,
+              totalPages: page.totalPages,
               error: null as string | null,
             };
           }),
@@ -546,15 +562,14 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
     name: "RAG Add Library",
     description:
       "Index a local folder into a searchable RAG library with priority and tag metadata. " +
-      "Multiple libraries can coexist — like GPT4All's multi-library model. " +
+      "Multiple libraries can coexist - like GPT4All's multi-library model. " +
       "Each library has a priority tier (proprietary > internal > reference > general) " +
       "and tags for automatic worker routing (e.g. 'legal', 'academic', 'technical'). " +
       "When Deep Research runs with local sources enabled, workers search the right " +
       "libraries based on their role: the academic worker prefers 'academic'-tagged libraries, " +
       "the regulatory worker prefers 'legal'/'policy'-tagged ones, etc. " +
       "Supports 30+ file types: text, markdown, HTML, code, CSV, JSON, XML, Jupyter notebooks, and more. " +
-      "Re-indexing a folder that was already indexed replaces the old library. " +
-      "For backward compatibility, 'Local Docs Add Collection' still works as an alias.",
+      "Re-indexing a folder that was already indexed replaces the old library.",
     parameters: {
       name: z
         .string()
@@ -562,25 +577,25 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .max(100)
         .describe(
           "A descriptive name for this library, e.g. 'Company Policies', " +
-            "'Research Papers', 'Client Reports'. Used in search results and reports.",
+          "'Research Papers', 'Client Reports'. Used in search results and reports.",
         ),
       folderPath: z
         .string()
         .min(1)
         .describe(
           "Absolute path to the folder containing your documents. " +
-            "All supported files in subdirectories will be included.",
+          "All supported files in subdirectories will be included.",
         ),
       priority: z
         .enum(["proprietary", "internal", "reference", "general"])
         .optional()
         .describe(
           "Priority tier for progressive source retrieval. " +
-            "proprietary = searched first, highest trust (your own confidential data). " +
-            "internal = second priority (shared team knowledge). " +
-            "reference = third priority (curated reference materials). " +
-            "general = lowest priority (miscellaneous). " +
-            "Default: general.",
+          "proprietary = searched first, highest trust (your own confidential data). " +
+          "internal = second priority (shared team knowledge). " +
+          "reference = third priority (curated reference materials). " +
+          "general = lowest priority (miscellaneous). " +
+          "Default: general.",
         ),
       tags: z
         .array(
@@ -599,8 +614,8 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Tags for automatic worker routing. Workers search matching libraries first. " +
-            "Examples: ['legal'] for contracts/policies, ['academic', 'technical'] for papers, " +
-            "['financial', 'reports'] for financial data. Default: ['general'].",
+          "Examples: ['legal'] for contracts/policies, ['academic', 'technical'] for papers, " +
+          "['financial', 'reports'] for financial data. Default: ['general'].",
         ),
       description: z
         .string()
@@ -643,7 +658,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
           instructions:
             "Library indexed. Enable 'Local Document Sources' in plugin settings " +
             "to include these documents in Deep Research results. " +
-            `Priority: ${library.priority} — ` +
+            `Priority: ${library.priority} - ` +
             (library.priority === "proprietary"
               ? "will be searched first, before all other sources."
               : library.priority === "internal"
@@ -652,44 +667,6 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         };
       } catch (err: unknown) {
         return `Error indexing library: ${errorMessage(err)}`;
-      }
-    },
-  });
-
-  const localDocsAddTool = tool({
-    name: "Local Docs Add Collection",
-    description:
-      "Index a local folder into a searchable collection (alias for 'RAG Add Library'). " +
-      "For advanced features like priority tiers and tags, use 'RAG Add Library' instead.",
-    parameters: {
-      name: z.string().min(1).max(100).describe("Collection name."),
-      folderPath: z.string().min(1).describe("Absolute path to folder."),
-    },
-    implementation: async ({ name, folderPath }, { status }) => {
-      try {
-        const store = getGlobalStore();
-        const cfg = readConfig(ctl);
-        const library = await store.indexCollection(
-          name,
-          folderPath,
-          cfg.contentLimitPerPage,
-          status,
-        );
-        return {
-          success: true,
-          collection: {
-            id: library.id,
-            name: library.name,
-            folderPath: library.folderPath,
-            fileCount: library.fileCount,
-            chunkCount: library.chunkCount,
-            totalWords: library.totalWords,
-            indexedAt: library.indexedAt,
-          },
-          tip: "For priority tiers and auto-routing tags, use 'RAG Add Library' instead.",
-        };
-      } catch (err: unknown) {
-        return `Error indexing collection: ${errorMessage(err)}`;
       }
     },
   });
@@ -733,34 +710,6 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
     },
   });
 
-  const localDocsListTool = tool({
-    name: "Local Docs List Collections",
-    description:
-      "List all indexed collections (alias for 'RAG List Libraries').",
-    parameters: {},
-    implementation: async () => {
-      const store = getGlobalStore();
-      const libraries = store.getLibraries();
-      if (libraries.length === 0) {
-        return { collections: [], message: "No collections indexed." };
-      }
-      return {
-        collections: libraries.map((c) => ({
-          id: c.id,
-          name: c.name,
-          folderPath: c.folderPath,
-          priority: c.priority,
-          tags: c.tags,
-          fileCount: c.fileCount,
-          chunkCount: c.chunkCount,
-          totalWords: c.totalWords,
-          indexedAt: c.indexedAt,
-        })),
-        stats: store.getStats(),
-      };
-    },
-  });
-
   const ragRemoveLibraryTool = tool({
     name: "RAG Remove Library",
     description:
@@ -797,31 +746,6 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
     },
   });
 
-  const localDocsRemoveTool = tool({
-    name: "Local Docs Remove Collection",
-    description:
-      "Remove an indexed collection (alias for 'RAG Remove Library').",
-    parameters: {
-      collectionId: z.string().uuid().describe("Collection UUID."),
-    },
-    implementation: async ({ collectionId }, { status }) => {
-      const store = getGlobalStore();
-      const library = store.getCollection(collectionId);
-      if (!library) return `Collection not found: ${collectionId}`;
-      const name = library.name;
-      const removed = store.removeCollection(collectionId);
-      if (removed) {
-        status(`Removed collection "${name}"`);
-        return {
-          success: true,
-          removedCollection: name,
-          remainingCollections: store.getCollections().length,
-        };
-      }
-      return "Failed to remove collection.";
-    },
-  });
-
   const ragSearchTool = tool({
     name: "RAG Search",
     description:
@@ -829,14 +753,14 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "Returns the most relevant chunks ranked by relevance with context windows " +
       "(text from surrounding chunks for richer understanding). " +
       "Supports progressive mode: searches proprietary libraries first, then internal, " +
-      "then reference, then general — stopping early when enough results are found. " +
+      "then reference, then general - stopping early when enough results are found. " +
       "For full research that blends local and web sources, use 'Deep Research' with Local Document Sources enabled.",
     parameters: {
       query: z
         .string()
         .min(1)
         .describe(
-          "Search query — natural language works best. Use '*' to list all chunks.",
+          "Search query - natural language works best. Use '*' to list all chunks.",
         ),
       maxResults: z
         .number()
@@ -855,14 +779,14 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .optional()
         .describe(
           "Use progressive search (default: true). Searches libraries in priority order: " +
-            "proprietary → internal → reference → general. Set to false to search all at once.",
+          "proprietary -> internal -> reference -> general. Set to false to search all at once.",
         ),
       includeContext: z
         .boolean()
         .optional()
         .describe(
           "Include surrounding chunk text for richer context (default: true). " +
-            "Adds ~200 chars before and after each matched chunk.",
+          "Adds ~200 chars before and after each matched chunk.",
         ),
     },
 
@@ -932,52 +856,6 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
 
         return result;
       });
-    },
-  });
-
-  const localDocsSearchTool = tool({
-    name: "Local Docs Search",
-    description: "Search local documents (alias for 'RAG Search').",
-    parameters: {
-      query: z.string().min(1).describe("Search query. Use '*' to list all."),
-      maxResults: z
-        .number()
-        .int()
-        .min(1)
-        .max(20)
-        .optional()
-        .describe("Max results (default: 8)."),
-      collectionId: z
-        .string()
-        .uuid()
-        .optional()
-        .describe("Limit to a specific collection."),
-    },
-    implementation: async ({ query, maxResults, collectionId }, { status }) => {
-      const store = getGlobalStore();
-      if (!store.hasCollections())
-        return "No collections indexed. Use 'Local Docs Add Collection' first.";
-      const max = maxResults ?? 8;
-      const targetIds = collectionId ? [collectionId] : undefined;
-      const isWildcard = query.trim() === "*";
-      status(
-        isWildcard ? "Listing all document chunks…" : `Searching: "${query}"`,
-      );
-      const hits = isWildcard
-        ? store.listAll(max, targetIds)
-        : store.search(query, max, targetIds);
-      if (hits.length === 0)
-        return { results: [], message: "No relevant documents found." };
-      status(`Found ${hits.length} relevant chunks.`);
-      return hits.map((h, i) => ({
-        rank: i + 1,
-        collection: h.libraryName,
-        file: h.fileName,
-        priority: h.libraryPriority,
-        score: Math.round(h.score * 1000) / 1000,
-        wordCount: h.wordCount,
-        content: h.text,
-      }));
     },
   });
 
@@ -1075,8 +953,8 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         added: changes.added,
         suggestion: hasChanges
           ? `Re-index with: RAG Add Library(name="${library.name}", folderPath="${library.folderPath}", ` +
-            `priority="${library.priority}", tags=${JSON.stringify(library.tags)})`
-          : "Library is up to date — no re-indexing needed.",
+          `priority="${library.priority}", tags=${JSON.stringify(library.tags)})`
+          : "Library is up to date - no re-indexing needed.",
       };
     },
   });
@@ -1093,7 +971,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         .min(1)
         .describe(
           "Path to save the index file, e.g. '~/.lmstudio/rag-index.json'. " +
-            "Parent directories are created automatically.",
+          "Parent directories are created automatically.",
         ),
     },
 
@@ -1137,9 +1015,9 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         const stats = store.getStats();
         status(
           `Loaded ${result.loaded} library(ies)` +
-            (result.skipped > 0
-              ? `, skipped ${result.skipped} (missing folders)`
-              : ""),
+          (result.skipped > 0
+            ? `, skipped ${result.skipped} (missing folders)`
+            : ""),
         );
         return {
           success: true,
@@ -1157,11 +1035,287 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
     },
   });
 
+  const pdfBatchReadTool = tool({
+    name: "PDF Batch Read",
+    description:
+      "Fetch and extract text from up to 10 PDF URLs in parallel, returning " +
+      "structured page-by-page content for each document. " +
+      "Ideal for processing multiple research papers, reports, or manuals at once - " +
+      "e.g. 4 PDFs of 20 pages each - where you need to cite specific pages or " +
+      "compare content across documents. " +
+      "Each result includes the full extracted text, estimated page count, word count, " +
+      "and a page-window breakdown so you can reference content by page number. " +
+      "Set autoIndex=true to also index all successfully read PDFs into a RAG library " +
+      "for later semantic search via 'RAG Search'.",
+
+    parameters: {
+      urls: z
+        .array(z.string().url())
+        .min(1)
+        .max(10)
+        .describe("PDF URLs to fetch and extract (1-10)."),
+
+      contentLimit: z
+        .number()
+        .int()
+        .min(CONTENT_LIMIT_MIN)
+        .max(CONTENT_LIMIT_EXTENDED)
+        .optional()
+        .describe(
+          "Maximum characters to extract per PDF " +
+          "(default: plugin content-per-page setting).",
+        ),
+
+      pageWindowChars: z
+        .number()
+        .int()
+        .min(500)
+        .max(8000)
+        .optional()
+        .describe(
+          "Approximate character width of each page window in the page breakdown. " +
+          "Smaller = more granular page citations. Default: 2000.",
+        ),
+
+      autoIndex: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, index each successfully extracted PDF into the RAG store " +
+          "under a library named after the URL hostname + path. " +
+          "Default: false.",
+        ),
+
+      indexLibraryName: z
+        .string()
+        .optional()
+        .describe(
+          "Library name to use when autoIndex=true. " +
+          "Default: 'pdf-batch-<timestamp>'.",
+        ),
+    },
+
+    implementation: async (
+      { urls, contentLimit, pageWindowChars = 2000, autoIndex = false, indexLibraryName },
+      { status, warn, signal },
+    ) => {
+      const cfg = readConfig(ctl);
+      const limit = contentLimit ?? cfg.contentLimitPerPage;
+      const CONCURRENCY = 3;
+
+      status(`Fetching ${urls.length} PDF(s) - ${CONCURRENCY} at a time…`);
+
+      interface PdfPageWindow {
+        pageEstimate: number;
+        charStart: number;
+        charEnd: number;
+        text: string;
+      }
+
+      interface PdfReadResult {
+        index: number;
+        url: string;
+        title: string;
+        author: string | null;
+        published: string | null;
+        pageCount: number;
+        wordCount: number;
+        charCount: number;
+        fullText: string;
+        pageWindows: PdfPageWindow[];
+        indexedAsLibraryId: string | null;
+        error: string | null;
+      }
+
+      const results: PdfReadResult[] = [];
+
+      for (let i = 0; i < urls.length; i += CONCURRENCY) {
+        if (signal.aborted) break;
+
+        const batch = urls.slice(i, i + CONCURRENCY);
+        const settled = await Promise.allSettled(
+          batch.map(async (url, bi): Promise<PdfReadResult> => {
+            const idx = i + bi + 1;
+            status(`[${idx}/${urls.length}] Fetching ${url}…`);
+
+            const fetchResult = await fetchPage(url, signal);
+            const { finalUrl } = fetchResult;
+
+            const isPdf =
+              (fetchResult.rawBuffer && isPdfContentType(fetchResult.contentType)) ||
+              (!fetchResult.rawBuffer && isPdfUrl(url));
+
+            if (!isPdf) {
+              return {
+                index: idx,
+                url: finalUrl,
+                title: "",
+                author: null,
+                published: null,
+                pageCount: 0,
+                wordCount: 0,
+                charCount: 0,
+                fullText: "",
+                pageWindows: [],
+                indexedAsLibraryId: null,
+                error: "URL did not return a PDF (wrong Content-Type or URL pattern).",
+              };
+            }
+
+            const buffer =
+              fetchResult.rawBuffer ??
+              (fetchResult.html?.startsWith("%PDF")
+                ? Buffer.from(fetchResult.html, "binary")
+                : null);
+
+            if (!buffer) {
+              return {
+                index: idx,
+                url: finalUrl,
+                title: "",
+                author: null,
+                published: null,
+                pageCount: 0,
+                wordCount: 0,
+                charCount: 0,
+                fullText: "",
+                pageWindows: [],
+                indexedAsLibraryId: null,
+                error: "Could not obtain PDF bytes from the response.",
+              };
+            }
+
+            status(`[${idx}/${urls.length}] Extracting text from PDF…`);
+            const extracted = await extractPdf(buffer, url, finalUrl, limit, false);
+
+            const text = extracted.text;
+            const pageWindows: PdfPageWindow[] = [];
+            const totalPages = extracted.pageCount > 0 ? extracted.pageCount : null;
+
+            if (text.length > 0) {
+              const segCount = Math.max(1, Math.ceil(text.length / pageWindowChars));
+              const segSize = Math.ceil(text.length / segCount);
+
+              for (let s = 0; s < segCount; s++) {
+                const charStart = s * segSize;
+                const charEnd = Math.min(charStart + segSize, text.length);
+                const pageEstimate = totalPages
+                  ? Math.min(totalPages, Math.round((s / segCount) * totalPages) + 1)
+                  : s + 1;
+                pageWindows.push({
+                  pageEstimate,
+                  charStart,
+                  charEnd,
+                  text: text.slice(charStart, charEnd),
+                });
+              }
+            }
+
+            const author: string | null = extracted.pdfAuthor || null;
+
+            let indexedAsLibraryId: string | null = null;
+            if (autoIndex) {
+              try {
+                const tmpDir = os.tmpdir();
+                const safeName = url.replace(/[^a-z0-9]/gi, "_").slice(-60);
+                const tmpPath = path.join(tmpDir, `pdf_batch_${safeName}.txt`);
+                fs.writeFileSync(tmpPath, text, "utf-8");
+
+                const libName =
+                  indexLibraryName ||
+                  `pdf-batch-${Date.now()}`;
+
+                const store = getGlobalStore();
+                const lib = await store.indexLibrary(
+                  path.dirname(tmpPath),
+                  libName,
+                  `Auto-indexed batch PDF: ${extracted.title || url}`,
+                  "reference",
+                  ["general"],
+                );
+                indexedAsLibraryId = lib?.id ?? null;
+                try { fs.unlinkSync(tmpPath); } catch { }
+              } catch (indexErr) {
+                warn(
+                  `Auto-index failed for ${url}: ${errorMessage(indexErr)}`,
+                );
+              }
+            }
+
+            return {
+              index: idx,
+              url: finalUrl,
+              title: extracted.title,
+              author,
+              published: extracted.published,
+              pageCount: extracted.pageCount > 0 ? extracted.pageCount : pageWindows.length,
+              wordCount: extracted.wordCount,
+              charCount: text.length,
+              fullText: text,
+              pageWindows,
+              indexedAsLibraryId,
+              error: null,
+            };
+          }),
+        );
+
+        for (let bi = 0; bi < settled.length; bi++) {
+          const outcome = settled[bi];
+          if (outcome.status === "fulfilled") {
+            results.push(outcome.value);
+          } else {
+            const msg = errorMessage(outcome.reason);
+            if (!isAbortError(outcome.reason)) {
+              warn(`Failed to read PDF ${batch[bi]}: ${msg}`);
+            }
+            results.push({
+              index: i + bi + 1,
+              url: batch[bi],
+              title: "",
+              author: null,
+              published: null,
+              pageCount: 0,
+              wordCount: 0,
+              charCount: 0,
+              fullText: "",
+              pageWindows: [],
+              indexedAsLibraryId: null,
+              error: msg,
+            });
+          }
+        }
+
+        if (i + CONCURRENCY < urls.length) await sleep(MULTI_READ_BATCH_DELAY_MS);
+      }
+
+      const succeeded = results.filter((r) => r.error === null).length;
+      const totalWords = results.reduce((s, r) => s + r.wordCount, 0);
+      status(
+        `Done: ${succeeded}/${urls.length} PDFs read, ~${totalWords.toLocaleString()} words total.`,
+      );
+
+      if (succeeded === 0) {
+        return "All PDF reads failed. Verify the URLs are accessible and return valid PDFs.";
+      }
+
+      return {
+        summary: {
+          totalRequested: urls.length,
+          totalSucceeded: succeeded,
+          totalWords,
+          autoIndexed: results.filter((r) => r.indexedAsLibraryId !== null).length,
+        },
+        documents: results,
+      };
+    },
+  });
+
   return [
     deepResearchTool,
     researchSearchTool,
     researchReadPageTool,
     researchMultiReadTool,
+    pdfBatchReadTool,
     ragAddLibraryTool,
     ragListLibrariesTool,
     ragRemoveLibraryTool,
@@ -1170,10 +1324,6 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
     ragCheckChangesTool,
     ragSaveIndexTool,
     ragLoadIndexTool,
-    localDocsAddTool,
-    localDocsListTool,
-    localDocsRemoveTool,
-    localDocsSearchTool,
   ];
 }
 

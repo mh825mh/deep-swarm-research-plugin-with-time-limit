@@ -1,7 +1,7 @@
 /**
  * @file net/ddg.ts
  * DuckDuckGo search scraper with:
- * - Adaptive throttle: shared error counter across all lanes — when DDG
+ * - Adaptive throttle: shared error counter across all lanes - when DDG
  *   starts failing, ALL lanes back off exponentially and add jitter
  * - Global cooldown: after N consecutive failures, pause everything
  * - Per-lane rate limiting with staggered offsets
@@ -9,11 +9,38 @@
  * - Query length enforcement (DDG chokes on 100+ char queries)
  */
 
+import { JSDOM } from "jsdom";
+import TurndownService from "turndown";
 import { DDG_RATE_LIMIT_MS } from "../constants";
 import { SearchHit } from "../types";
-import { buildDDGHeaders, sleep } from "./http";
+import { sleep, fetchInsecure } from "./http";
+import { searchBrave, searchMojeek } from "./search-engines";
 
-/** Max query length sent to DDG — longer queries get trimmed. */
+function randomUA(): string {
+  return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+}
+
+export function buildDDGHeaders(): Record<string, string> {
+  return {
+    "User-Agent": randomUA(),
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    DNT: "1",
+    Connection: "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+  };
+}
+
+const turndownService = new TurndownService();
+
+const DDG_INTERNAL = /duckduckgo\.com|bing\.com/;
+
+/** Max query length sent to DDG - longer queries get trimmed. */
 const MAX_QUERY_LENGTH = 80;
 
 /** Trim a query to fit DDG's sweet spot without cutting mid-word. */
@@ -62,7 +89,7 @@ class AdaptiveThrottle {
   }
 }
 
-/** Singleton — shared across all lanes and workers in a run. */
+/** Singleton - shared across all lanes and workers in a run. */
 const globalThrottle = new AdaptiveThrottle();
 
 export class DdgRateLimiter {
@@ -133,7 +160,7 @@ export class DdgLimiterPool {
   }
 }
 
-/** Reset adaptive throttle — call at the start of a new research session. */
+/** Reset adaptive throttle - call at the start of a new research session. */
 export function resetThrottle(): void {
   (globalThrottle as any).consecutiveErrors = 0;
   (globalThrottle as any).cooldownUntil = 0;
@@ -152,20 +179,7 @@ export async function searchDDG(
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
   const offset = (page - 1) * maxResults;
-
-  try {
-    const hits = await tryLiteEndpoint(
-      trimmed,
-      maxResults,
-      safeSearch,
-      signal,
-      offset,
-    );
-    if (hits.length > 0) {
-      globalThrottle.reportSuccess();
-      return hits;
-    }
-  } catch { }
+  console.log(`(DDG) Query: '${query}' (offset: ${offset}, limit: ${maxResults})`);
 
   if (page <= 1) {
     try {
@@ -176,13 +190,47 @@ export async function searchDDG(
         signal,
       );
       if (hits.length > 0) {
+        console.log(`(HTML) Success: ${hits.length} results`);
         globalThrottle.reportSuccess();
         return hits;
       }
     } catch { }
   }
 
+  try {
+    const hits = await tryLiteEndpoint(
+      trimmed,
+      maxResults,
+      safeSearch,
+      signal,
+      offset,
+    );
+    if (hits.length > 0) {
+      console.log(`(Lite) Success: ${hits.length} results`);
+      globalThrottle.reportSuccess();
+      return hits;
+    }
+  } catch { }
+
   const penalty = globalThrottle.reportError();
+  
+  try {
+    console.log(`(Fallback) DDG failed, trying Brave Search for: "${trimmed}"`);
+    const braveHits = await searchBrave(trimmed, maxResults, signal, limiter);
+    if (braveHits.length > 0) {
+      console.log(`(Brave) Fallback success: ${braveHits.length} results`);
+      return braveHits;
+    }
+  } catch { }
+
+  try {
+    const mojeekHits = await searchMojeek(trimmed, maxResults, signal, limiter);
+    if (mojeekHits.length > 0) {
+      console.log(`(Mojeek) Fallback success: ${mojeekHits.length} results`);
+      return mojeekHits;
+    }
+  } catch { }
+
   if (penalty > 0 && !signal.aborted) {
     await sleep(Math.min(penalty, 5_000));
   }
@@ -216,6 +264,7 @@ export async function searchDDGPaginated(
       limiter,
       p,
     );
+    console.log(`(DDG) ${query} -> ${hits.length} results`);
     for (const h of hits) {
       if (!seen.has(h.url)) {
         seen.add(h.url);
@@ -236,28 +285,21 @@ async function tryLiteEndpoint(
   signal: AbortSignal,
   offset: number = 0,
 ): Promise<ReadonlyArray<SearchHit>> {
-  const url = new URL("https://lite.duckduckgo.com/lite/");
-  url.searchParams.set("q", query);
-  if (safeSearch === "strict") url.searchParams.set("p", "-1");
-  if (safeSearch === "off") url.searchParams.set("p", "1");
-
+  const url = "https://lite.duckduckgo.com/lite/";
+  
   let body = `q=${encodeURIComponent(query)}`;
+  if (safeSearch === "strict") body += "&p=-1";
+  if (safeSearch === "off") body += "&p=1";
   if (offset > 0) {
     body += `&s=${offset}&dc=${Math.floor(offset / maxResults) + 1}`;
   }
 
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    signal,
-    headers: {
-      ...buildDDGHeaders(),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-
-  if (!res.ok) throw new Error(`DDG lite HTTP ${res.status}`);
-  const html = await res.text();
+  console.log(`(Lite) Fetching '${url}' (POST)`);
+  const html = await fetchInsecure(url, {
+    ...buildDDGHeaders(),
+    "Content-Type": "application/x-www-form-urlencoded",
+  }, signal, body);
+  
   return parseLiteResults(html, maxResults);
 }
 
@@ -272,14 +314,8 @@ async function tryHtmlEndpoint(
   if (safeSearch === "strict") url.searchParams.set("p", "-1");
   if (safeSearch === "off") url.searchParams.set("p", "1");
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    signal,
-    headers: buildDDGHeaders(),
-  });
-
-  if (!res.ok) throw new Error(`DDG html HTTP ${res.status}`);
-  const html = await res.text();
+  console.log(`(HTML) Fetching '${url.toString()}'`);
+  const html = await fetchInsecure(url.toString(), buildDDGHeaders(), signal);
   return parseHtmlResults(html, maxResults);
 }
 
@@ -287,37 +323,63 @@ function parseLiteResults(
   html: string,
   maxResults: number,
 ): ReadonlyArray<SearchHit> {
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
   const hits: SearchHit[] = [];
   const seen = new Set<string>();
 
-  const linkRe =
-    /<a[^>]+class="result-link"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
-  const snippetRe = /<td[^>]+class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi;
+  let resultLinks = doc.querySelectorAll("a.result-link");
+  if (resultLinks.length === 0) {
+    resultLinks = doc.querySelectorAll(".result-link");
+  }
+  if (resultLinks.length === 0) {
+    resultLinks = doc.querySelectorAll(".links_main a");
+  }
+  if (resultLinks.length === 0) {
+    resultLinks = doc.querySelectorAll("a[href*='uddg=']");
+  }
 
-  const links: Array<{ url: string; title: string }> = [];
-  const snippets: string[] = [];
+  for (const link of Array.from(resultLinks)) {
+    if (hits.length >= maxResults) break;
 
-  let m: RegExpExecArray | null;
+    let rawUrl = (link as HTMLAnchorElement).href || "";
+    const title = link.textContent?.trim() || "";
 
-  while ((m = linkRe.exec(html)) !== null) {
-    const rawUrl = decodeURIComponent(m[1]).trim();
-    const title = stripTags(m[2]).trim();
-    if (rawUrl.startsWith("http") && !DDG_INTERNAL.test(rawUrl)) {
-      links.push({ url: rawUrl, title });
+    const row = link.closest("tr");
+    const snippetEl =
+      row?.nextElementSibling?.querySelector(".result-snippet") ||
+      row?.querySelector(".result-snippet");
+
+    const snippet = snippetEl
+      ? turndownService.turndown(snippetEl.innerHTML).replace(/\s+/g, " ").trim()
+      : title;
+
+    const uddgMatch = /[?&]uddg=([^&]+)/.exec(rawUrl);
+    if (uddgMatch) {
+      try {
+        rawUrl = decodeURIComponent(uddgMatch[1]);
+      } catch {
+        /* ignore decode errors */
+      }
+    } else {
+      try {
+        rawUrl = decodeURIComponent(rawUrl);
+      } catch {
+        /* ignore */
+      }
     }
+
+    if (!rawUrl.startsWith("http") || DDG_INTERNAL.test(rawUrl)) {
+      continue;
+    }
+
+    if (seen.has(rawUrl)) continue;
+    seen.add(rawUrl);
+
+    hits.push({ url: rawUrl, title, snippet });
   }
 
-  while ((m = snippetRe.exec(html)) !== null) {
-    snippets.push(stripTags(m[1]).replace(/\s+/g, " ").trim());
-  }
-
-  for (let i = 0; i < links.length && hits.length < maxResults; i++) {
-    const { url, title } = links[i];
-    if (seen.has(url)) continue;
-    seen.add(url);
-    hits.push({ url, title, snippet: snippets[i] ?? title });
-  }
-
+  console.log(`(Lite) ${hits.length} parsed (html length: ${html.length})`);
   return hits;
 }
 
@@ -325,43 +387,48 @@ function parseHtmlResults(
   html: string,
   maxResults: number,
 ): ReadonlyArray<SearchHit> {
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
   const hits: SearchHit[] = [];
   const seen = new Set<string>();
 
-  const resultBlockRe =
-    /<div[^>]+class="[^"]*\bresult\b[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]+class="[^"]*\bresult\b|$)/gi;
-  const linkRe = /class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i;
-  const snippetRe =
-    /class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|span|td|div)>/i;
+  const results = doc.querySelectorAll(".result");
 
-  let blockMatch: RegExpExecArray | null;
+  for (const res of Array.from(results)) {
+    if (hits.length >= maxResults) break;
 
-  while (
-    hits.length < maxResults &&
-    (blockMatch = resultBlockRe.exec(html)) !== null
-  ) {
-    const block = blockMatch[1];
+    const link = res.querySelector(".result__a") as HTMLAnchorElement;
+    if (!link) continue;
 
-    const linkMatch = linkRe.exec(block);
-    if (!linkMatch) continue;
+    let rawUrl = link.href || "";
+    const title = link.textContent?.trim() || "";
 
-    let rawUrl = linkMatch[1];
-    const uddgMatch = /[?&]uddg=([^&]+)/.exec(rawUrl);
-    if (uddgMatch) rawUrl = decodeURIComponent(uddgMatch[1]);
-    else rawUrl = decodeURIComponent(rawUrl);
-
-    if (!rawUrl.startsWith("http")) continue;
-    if (DDG_INTERNAL.test(rawUrl)) continue;
-    if (seen.has(rawUrl)) continue;
-
-    seen.add(rawUrl);
-
-    const title = stripTags(linkMatch[2]).replace(/\s+/g, " ").trim();
-
-    const snippetMatch = snippetRe.exec(block);
-    const snippet = snippetMatch
-      ? stripTags(snippetMatch[1]).replace(/\s+/g, " ").trim()
+    const snippetEl = res.querySelector(".result__snippet");
+    const snippet = snippetEl
+      ? turndownService.turndown(snippetEl.innerHTML).replace(/\s+/g, " ").trim()
       : title;
+
+    const uddgMatch = /[?&]uddg=([^&]+)/.exec(rawUrl);
+    if (uddgMatch) {
+      try {
+        rawUrl = decodeURIComponent(uddgMatch[1]);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        rawUrl = decodeURIComponent(rawUrl);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!rawUrl.startsWith("http") || DDG_INTERNAL.test(rawUrl)) {
+      continue;
+    }
+
+    if (seen.has(rawUrl)) continue;
+    seen.add(rawUrl);
 
     hits.push({ url: rawUrl, title, snippet });
   }
@@ -377,33 +444,33 @@ function parseLegacy(
   html: string,
   maxResults: number,
 ): ReadonlyArray<SearchHit> {
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
   const hits: SearchHit[] = [];
   const seen = new Set<string>();
-  const re = /\shref="[^"]*(https?[^?&"]+)[^>]*>([^<]*)/gm;
-  let m: RegExpExecArray | null;
-  re.lastIndex = 0;
 
-  while (hits.length < maxResults && (m = re.exec(html)) !== null) {
-    const rawUrl = decodeURIComponent(m[1]);
-    const title = m[2].replace(/\s+/g, " ").trim();
-    if (DDG_INTERNAL.test(rawUrl)) continue;
-    if (seen.has(rawUrl)) continue;
-    seen.add(rawUrl);
-    hits.push({ url: rawUrl, title, snippet: title });
+  const links = doc.querySelectorAll("a[href]");
+
+  for (const link of Array.from(links)) {
+    if (hits.length >= maxResults) break;
+
+    const href = (link as HTMLAnchorElement).href;
+    if (!href) continue;
+
+    try {
+      const rawUrl = decodeURIComponent(href);
+      const title = link.textContent?.trim() || "";
+
+      if (DDG_INTERNAL.test(rawUrl)) continue;
+      if (!rawUrl.startsWith("http")) continue;
+      if (seen.has(rawUrl)) continue;
+
+      seen.add(rawUrl);
+      hits.push({ url: rawUrl, title, snippet: title });
+    } catch {
+      continue;
+    }
   }
 
   return hits;
-}
-
-const DDG_INTERNAL = /duckduckgo\.com|bing\.com/;
-
-function stripTags(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&nbsp;/g, " ");
 }

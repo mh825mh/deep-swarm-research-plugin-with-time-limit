@@ -1,6 +1,6 @@
 /**
  * @file net/search-engines.ts
- * Multi-engine search — Brave Search, Google Scholar, SearXNG, Mojeek.
+ * Multi-engine search - Brave Search, Google Scholar, SearXNG, Mojeek.
  * ALL are HTML-scraped, zero API keys required.
  * Combined with DDG to 2-4× the candidate pool.
  */
@@ -219,28 +219,27 @@ function parseMojeekResults(html: string, maxResults: number): SearchHit[] {
   const hits: SearchHit[] = [];
   const seen = new Set<string>();
 
-  const linkRe = /<a[^>]+class="ob"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-  const snippetRe = /<p[^>]+class="s"[^>]*>([\s\S]*?)<\/p>/gi;
-
-  const links: Array<{ url: string; title: string }> = [];
-  const snippets: string[] = [];
+  const resultBlockRe =
+    /<a[^>]+class="ob"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<a[^>]+class="ob"|$)/gi;
+  const snippetRe = /<p[^>]+class="s"[^>]*>([\s\S]*?)<\/p>/i;
 
   let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(html)) !== null) {
+  while (hits.length < maxResults && (m = resultBlockRe.exec(html)) !== null) {
     const rawUrl = m[1].trim();
-    if (rawUrl.startsWith("http") && !/mojeek\.com/i.test(rawUrl)) {
-      links.push({ url: rawUrl, title: stripTags(m[2]).trim() });
-    }
-  }
-  while ((m = snippetRe.exec(html)) !== null) {
-    snippets.push(stripTags(m[1]).trim());
-  }
+    const title = stripTags(m[2]).trim();
+    const blockContent = m[3];
 
-  for (let i = 0; i < links.length && hits.length < maxResults; i++) {
-    const { url, title } = links[i];
-    if (seen.has(url)) continue;
-    seen.add(url);
-    hits.push({ url, title, snippet: snippets[i] ?? title });
+    if (!rawUrl.startsWith("http") || /mojeek\.com/i.test(rawUrl)) {
+      continue;
+    }
+
+    if (seen.has(rawUrl)) continue;
+    seen.add(rawUrl);
+
+    const sm = snippetRe.exec(blockContent);
+    const snippet = sm ? stripTags(sm[1]).trim() : title;
+
+    hits.push({ url: rawUrl, title, snippet });
   }
 
   return hits;
@@ -310,7 +309,6 @@ function stripTags(html: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
 }

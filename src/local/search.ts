@@ -7,7 +7,7 @@
  * as web-sourced content.
  *
  * Now supports:
- * - Progressive source retrieval (proprietary → internal → reference → general)
+ * - Progressive source retrieval (proprietary -> internal -> reference -> general)
  * - Role-based auto-routing via library tags
  * - Context-enriched chunks (includes surrounding chunk text)
  * - Library priority boosting in relevance scores
@@ -79,7 +79,7 @@ function localHitToCrawledSource(
     url: `local://${hit.libraryName}/${hit.fileRelPath || hit.fileName}#chunk${hit.chunkIndex}`,
     finalUrl: `local://${hit.libraryName}/${hit.fileRelPath || hit.fileName}#chunk${hit.chunkIndex}`,
     title: hit.heading
-      ? `${hit.fileName} — ${hit.heading} (${hit.libraryName})`
+      ? `${hit.fileName} - ${hit.heading} (${hit.libraryName})`
       : `${hit.fileName} (${hit.libraryName})`,
     description: text.slice(0, 250).replace(/\n+/g, " ").trim(),
     published: null,
@@ -97,15 +97,15 @@ function localHitToCrawledSource(
   };
 }
 
-export function searchLocalCollections(
+export function searchLocalLibraries(
   query: string,
   maxResults: number,
-  collectionIds?: ReadonlyArray<string>,
+  libraryIds?: ReadonlyArray<string>,
 ): ReadonlyArray<SearchHit> {
   const store = getGlobalStore();
-  if (!store.hasCollections()) return [];
+  if (!store.hasLibraries()) return [];
 
-  const hits = store.search(query, maxResults, collectionIds);
+  const hits = store.search(query, maxResults, libraryIds);
   return hits.map(localHitToSearchHit);
 }
 
@@ -113,19 +113,19 @@ export function searchLocalForRole(
   query: string,
   role: WorkerRole,
   maxResults: number = 8,
-  roleCollectionMap?: ReadonlyMap<string, ReadonlyArray<string>>,
+  roleLibraryMap?: ReadonlyMap<string, ReadonlyArray<string>>,
 ): ReadonlyArray<SearchHit> {
   const store = getGlobalStore();
-  if (!store.hasCollections()) return [];
+  if (!store.hasLibraries()) return [];
 
-  const hits = store.searchByRole(query, role, maxResults, roleCollectionMap);
+  const hits = store.searchByRole(query, role, maxResults, roleLibraryMap);
   return hits.map(localHitToSearchHit);
 }
 
 /**
  * Progressive harvest: searches local libraries in priority order
  * (proprietary first, then internal, reference, general).
- * This is the "progressive source approach" — proprietary knowledge
+ * This is the "progressive source approach" - proprietary knowledge
  * is preferred, web fills remaining gaps.
  */
 export function harvestLocalSources(
@@ -134,16 +134,16 @@ export function harvestLocalSources(
   label: string,
   maxTotal: number,
   contentLimit: number,
-  collectionIds?: ReadonlyArray<string>,
-  roleCollectionMap?: ReadonlyMap<string, ReadonlyArray<string>>,
+  libraryIds?: ReadonlyArray<string>,
+  roleLibraryMap?: ReadonlyMap<string, ReadonlyArray<string>>,
 ): ReadonlyArray<CrawledSource> {
   const store = getGlobalStore();
-  if (!store.hasCollections()) return [];
+  if (!store.hasLibraries()) return [];
 
   const seen = new Set<string>();
   const sources: CrawledSource[] = [];
 
-  const useProgressive = !collectionIds && !roleCollectionMap?.get(role);
+  const useProgressive = !libraryIds && !roleLibraryMap?.get(role);
 
   for (const query of queries) {
     if (sources.length >= maxTotal) break;
@@ -154,7 +154,7 @@ export function harvestLocalSources(
     if (useProgressive) {
       hits = store.searchProgressive(query, remaining);
     } else {
-      const targetIds = roleCollectionMap?.get(role) ?? collectionIds;
+      const targetIds = roleLibraryMap?.get(role) ?? libraryIds;
       hits = store.search(query, remaining, targetIds);
     }
 

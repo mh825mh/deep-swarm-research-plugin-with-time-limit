@@ -65,7 +65,7 @@ export const DEPTH_PROFILES: Readonly<Record<DepthPreset, DepthProfile>> = {
     searchPages: 1,
     searchLanes: 2,
     workerFanOut: 1,
-    extraEngines: [],
+    extraEngines: ["brave", "mojeek"],
     linkCrawlDepth: 1,
     queryMutationThreshold: 2,
   },
@@ -94,7 +94,7 @@ export const DEPTH_PROFILES: Readonly<Record<DepthPreset, DepthProfile>> = {
     searchPages: 1,
     searchLanes: 2,
     workerFanOut: 1,
-    extraEngines: ["brave"],
+    extraEngines: ["brave", "mojeek", "searxng"],
     linkCrawlDepth: 1,
     queryMutationThreshold: 2,
   },
@@ -123,7 +123,7 @@ export const DEPTH_PROFILES: Readonly<Record<DepthPreset, DepthProfile>> = {
     searchPages: 2,
     searchLanes: 3,
     workerFanOut: 2,
-    extraEngines: ["brave", "searxng"],
+    extraEngines: ["brave", "mojeek", "searxng"],
     linkCrawlDepth: 2,
     queryMutationThreshold: 3,
   },
@@ -152,7 +152,7 @@ export const DEPTH_PROFILES: Readonly<Record<DepthPreset, DepthProfile>> = {
     searchPages: 2,
     searchLanes: 4,
     workerFanOut: 2,
-    extraEngines: ["brave", "scholar", "searxng"],
+    extraEngines: ["brave", "mojeek", "scholar", "searxng"],
     linkCrawlDepth: 2,
     queryMutationThreshold: 3,
   },
@@ -195,16 +195,16 @@ export function getDepthProfile(preset: DepthPreset): DepthProfile {
 export const DDG_RATE_LIMIT_MS = 2_000;
 
 /** Per-request fetch timeout in milliseconds. */
-export const FETCH_TIMEOUT_MS = 15_000;
+export const FETCH_TIMEOUT_MS = 10_000;
 
 /** Image fetch timeout. */
 export const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 
 /** Max retry attempts for a single HTTP fetch. */
-export const FETCH_MAX_RETRIES = 3;
+export const FETCH_MAX_RETRIES = 4;
 
 /** Delay between fetch retries. */
-export const FETCH_RETRY_DELAY_MS = 700;
+export const FETCH_RETRY_DELAY_MS = 1500;
 
 /** Delay between page fetches within a worker batch (politeness). */
 export const BATCH_INTER_FETCH_DELAY_MS = 300;
@@ -212,10 +212,10 @@ export const BATCH_INTER_FETCH_DELAY_MS = 300;
 /** Timeout for cache/archive fallback attempts on bot-blocked pages. */
 export const CACHE_FALLBACK_TIMEOUT_MS = 10_000;
 
-/** Max concurrent page fetches per worker (default — overridden by depth profile). */
+/** Max concurrent page fetches per worker (default - overridden by depth profile). */
 export const WORKER_CONCURRENCY = 3;
 
-/** Max pages a single domain may contribute (default — overridden by depth profile). */
+/** Max pages a single domain may contribute (default - overridden by depth profile). */
 export const MAX_PAGES_PER_DOMAIN = 3;
 
 /** Minimum word count for a page to be considered useful. */
@@ -227,7 +227,7 @@ export const MAX_LINKS_TO_EVALUATE = 40;
 /** Max links actually followed per worker (best-scored subset). */
 export const MAX_LINKS_TO_FOLLOW = 4;
 
-/** Minimum relevance score (0–1) for a fetched page to be kept. */
+/** Minimum relevance score (0-1) for a fetched page to be kept. */
 export const MIN_RELEVANCE_SCORE = 0.15;
 
 /**
@@ -389,7 +389,7 @@ export const OUTLINK_TEXT_MIN_LEN = 3;
 /** Maximum character length of an outlink's anchor text to keep it. */
 export const OUTLINK_TEXT_MAX_LEN = 120;
 
-export const DNS_RESOLVERS = ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"];
+export const DNS_RESOLVERS = ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9"];
 
 export const CONTENT_LIMIT_MIN = 1_000;
 export const CONTENT_LIMIT_MAX = 20_000;

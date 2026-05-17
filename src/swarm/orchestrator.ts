@@ -143,8 +143,8 @@ function buildTaskBase(
   | "linkCrawlDepth"
   | "queryMutationThreshold"
   | "enableLocalSources"
-  | "localCollectionIds"
-  | "roleCollectionMap"
+  | "localLibraryIds"
+  | "roleLibraryMap"
 > {
   return {
     contentLimit: cfg.contentLimitPerPage,
@@ -162,8 +162,8 @@ function buildTaskBase(
     linkCrawlDepth: profile.linkCrawlDepth,
     queryMutationThreshold: profile.queryMutationThreshold,
     enableLocalSources: cfg.enableLocalSources,
-    localCollectionIds: cfg.localCollectionIds,
-    roleCollectionMap: cfg.roleCollectionMap,
+    localLibraryIds: cfg.localLibraryIds,
+    roleLibraryMap: cfg.roleLibraryMap,
   };
 }
 
@@ -259,7 +259,7 @@ export async function runSwarm(
   const pool = new DdgLimiterPool(profile.searchLanes, profile.ddgRateLimitMs);
 
   status(
-    `\n Launching swarm for: "${cfg.topic}" [${cfg.depthPreset} — ` +
+    `\n Launching swarm for: "${cfg.topic}" [${cfg.depthPreset} - ` +
     `${profile.depthRounds} rounds, ${profile.pageBudgetPerWorker} pages/worker, ` +
     `${profile.searchLanes} search lanes, fan-out ×${profile.workerFanOut}` +
     `${cfg.enableLocalSources ? ", local sources enabled" : ""}]`,
@@ -345,7 +345,7 @@ export async function runSwarm(
   aggregateResults(round1Results, allSources, allQueries, allErrors);
 
   status(
-    `\n Round 1 complete — ${allSources.length} sources from ${round1Tasks.length} parallel workers`,
+    `\n Round 1 complete - ${allSources.length} sources from ${round1Tasks.length} parallel workers`,
   );
 
   let priorMessages: ReadonlyArray<AgentMessage> = [];
@@ -367,7 +367,7 @@ export async function runSwarm(
     const coveredIds = detectCoveredDimensions(allSources.map((s) => s.text));
     if (coveredIds.length >= DIMENSIONS.length) {
       status(
-        `\n All ${DIMENSIONS.length} research dimensions covered — stopping early at round ${round}`,
+        `\n All ${DIMENSIONS.length} research dimensions covered - stopping early at round ${round}`,
       );
       break;
     }
@@ -393,7 +393,7 @@ export async function runSwarm(
     const roundName =
       round <= 2 ? "Follow-up" : round <= 5 ? "Deep-dive" : "Exhaustive";
     status(
-      `\n ${roundName} round ${round} — ${gapPlans.length} targeted gap-fill worker(s), ` +
+      `\n ${roundName} round ${round} - ${gapPlans.length} targeted gap-fill worker(s), ` +
       `${profile.pageBudgetPerGapWorker} pages each…`,
     );
 
@@ -442,14 +442,14 @@ export async function runSwarm(
 
     const newSources = allSources.length - sourcesBefore;
     status(
-      `Round ${round} done — ${newSources} new sources this round, ${allSources.length} total`,
+      `Round ${round} done - ${newSources} new sources this round, ${allSources.length} total`,
     );
 
     if (newSources === 0) {
       consecutiveStagnant++;
       if (consecutiveStagnant >= profile.stagnationThreshold) {
         status(
-          `\n ${consecutiveStagnant} consecutive round(s) with no new sources — stopping (stagnation)`,
+          `\n ${consecutiveStagnant} consecutive round(s) with no new sources - stopping (stagnation)`,
         );
         break;
       }

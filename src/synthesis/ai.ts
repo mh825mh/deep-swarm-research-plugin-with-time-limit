@@ -60,7 +60,7 @@ function prepareSources(
     .map((s) => {
       const preview = s.text.slice(0, charsPerSrc).replace(/\n+/g, " ").trim();
       const pub = s.published ? ` (${s.published})` : "";
-      return `[${s.index}] "${s.title}"${pub} — ${s.tier} (score: ${s.domainScore})\n${preview}`;
+      return `[${s.index}] "${s.title}"${pub} - ${s.tier} (score: ${s.domainScore})\n${preview}`;
     })
     .join("\n\n");
 }
@@ -82,7 +82,7 @@ export async function synthesiseReport(
   if (sources.length === 0) return null;
 
   status(
-    `AI synthesis — writing narrative research analysis (${sources.length} sources, up to ${profile.synthesisMaxSources} in prompt)…`,
+    `AI synthesis - writing narrative research analysis (${sources.length} sources, up to ${profile.synthesisMaxSources} in prompt)…`,
   );
 
   const sourceBlock = prepareSources(
@@ -109,15 +109,15 @@ SOURCES:
 ${sourceBlock}
 
 INSTRUCTIONS:
-1. Write ${paragraphHint} of coherent analysis — NOT a list of bullet points
+1. Write ${paragraphHint} of coherent analysis - NOT a list of bullet points
 2. Synthesise thematically: group related findings across sources, don't just summarise each source
 3. Use inline citations like [1], [2], [3] when referencing specific sources
 4. Highlight areas where sources AGREE (consensus) and where they DISAGREE (contradictions)
 5. Note any important limitations or gaps in the available evidence
 6. End with 2-3 key takeaways
-7. Write in a neutral, analytical tone — like a research brief
-8. Do NOT start with "This report" or "This synthesis" — jump straight into the analysis
-9. Be thorough — the user wants comprehensive coverage, not a summary
+7. Write in a neutral, analytical tone - like a research brief
+8. Do NOT start with "This report" or "This synthesis" - jump straight into the analysis
+9. Be thorough - the user wants comprehensive coverage, not a summary
 
 SYNTHESIS:`;
 
@@ -138,7 +138,7 @@ SYNTHESIS:`;
     return result;
   }
 
-  status("AI synthesis unavailable — using structured extraction fallback");
+  status("AI synthesis unavailable - using structured extraction fallback");
   return null;
 }
 
@@ -167,7 +167,7 @@ export async function detectContradictions(
     Math.max(5, Math.floor(sources.length / 5)),
   );
 
-  const prompt = `You are a fact-checking analyst. Given these research sources on "${topic}", identify any CONTRADICTIONS — places where two sources make conflicting claims about the same thing.
+  const prompt = `You are a fact-checking analyst. Given these research sources on "${topic}", identify any CONTRADICTIONS - places where two sources make conflicting claims about the same thing.
 
 SOURCES:
 ${sourceBlock}

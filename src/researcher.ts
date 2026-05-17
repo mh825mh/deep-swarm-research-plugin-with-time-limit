@@ -52,7 +52,7 @@ export async function runDeepResearch(
   );
 
   status(
-    `Report ready — ${swarmResult.sources.length} sources, ${swarmResult.queriesUsed.length} queries`,
+    `Report ready - ${swarmResult.sources.length} sources, ${swarmResult.queriesUsed.length} queries`,
   );
 
   return {
