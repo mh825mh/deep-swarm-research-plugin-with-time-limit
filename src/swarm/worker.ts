@@ -87,11 +87,7 @@ export async function runWorker(
 
   const roleTag = `[${task.label}]`;
   status(
-    `${roleTag} Starting - ${task.queries.length} queries, budget: ${task.pageBudget} pages` +
-    (task.extraEngines.length > 0
-      ? `, engines: DDG+${task.extraEngines.join("+")}`
-      : ""),
-  );
+    `${roleTag} Starting - ${task.queries.length} queries, budget: ${task.pageBudget} pages`);
 
   if (task.enableLocalSources) {
     console.log("Local sources:", task.localLibraryIds);
@@ -196,7 +192,7 @@ export async function runWorker(
     if (task.extraEngines.length > 0 && !signal.aborted) {
       console.log(`(${roleTag}) Extra engines: ${task.extraEngines.join("+")}`);
       console.log(`(${roleTag}) Extra engines query: "${query}" (pages: ${task.searchPages})`);
-           try {
+      try {
         const extraHits = await multiEngineSearch(
           query,
           Math.min(task.searchResultsPerQuery, 8),
@@ -207,7 +203,7 @@ export async function runWorker(
         for (const h of extraHits) allHits.push({ ...h, query });
         if (extraHits.length > 0) {
           status(
-            `${roleTag} +${task.extraEngines.join("+")} -> ${extraHits.length} extra results`,
+            `${roleTag} -> ${extraHits.length} extra results`,
           );
         }
       } catch {

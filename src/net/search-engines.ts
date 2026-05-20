@@ -19,7 +19,8 @@ export async function searchBrave(
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
   try {
-    const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
+    const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web&_rr=1`;
+    console.log(`(Brave) Fetching '${url}'`);
     const res = await fetch(url, {
       signal,
       headers: {
@@ -28,8 +29,10 @@ export async function searchBrave(
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
+    console.log(`(Brave) Status ${res.status}`);
     if (!res.ok) return [];
     const html = await res.text();
+    console.log(`(Brave) Fetched ${html.length} bytes`);
     return parseBraveResults(html, maxResults);
   } catch {
     return [];

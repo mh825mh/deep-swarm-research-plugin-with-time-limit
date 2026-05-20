@@ -381,7 +381,7 @@ function buildHeader(
       : `> **Total sources:** ${sources.length}`;
 
   return [
-    `# Deep Research Report: ${esc(topic)}`,
+    `# Research Report: ${esc(topic)}`,
     ``,
     `> **Generated:** ${timestamp}`,
     `> **Architecture:** Swarm (${workerLabels.length} parallel workers)`,

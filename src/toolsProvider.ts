@@ -69,7 +69,7 @@ export async function toolsProvider(
   ctl: ToolsProviderController,
 ): Promise<Tool[]> {
   const deepResearchTool = tool({
-    name: "Deep Research",
+    name: "Research",
     description: `Performs autonomous, multi-round deep web research using a Agent Swarm with AI-powered synthesis.
 
 HOW IT WORKS:
@@ -211,7 +211,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "Search DuckDuckGo and return scored, ranked results with domain authority tiers. " +
       "Each result includes a domain score (0-100), source tier (academic/government/news/etc.), " +
       "URL quality score, and freshness estimate. Results are ranked by combined quality. " +
-      "Use this for focused lookups. For full research, use 'Deep Research'." +
+      "Use this for focused lookups. For full research, use 'Research'." +
       "Don't use this for searching local files.",
     parameters: {
       query: z
@@ -425,7 +425,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "clean text instead of returning garbled binary data. Returns domain authority " +
       "score, publication date, and word count per page. " +
       "Use this when you already have a list of URLs and want to read them all " +
-      "at once without running a full deep research session.",
+      "at once without running a full research session.",
     parameters: {
       urls: z
         .array(z.string().url())
@@ -565,7 +565,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "Multiple libraries can coexist - like GPT4All's multi-library model. " +
       "Each library has a priority tier (proprietary > internal > reference > general) " +
       "and tags for automatic worker routing (e.g. 'legal', 'academic', 'technical'). " +
-      "When Deep Research runs with local sources enabled, workers search the right " +
+      "When 'Research' runs with local sources enabled, workers search the right " +
       "libraries based on their role: the academic worker prefers 'academic'-tagged libraries, " +
       "the regulatory worker prefers 'legal'/'policy'-tagged ones, etc. " +
       "Supports 30+ file types: text, markdown, HTML, code, CSV, JSON, XML, Jupyter notebooks, and more. " +
@@ -657,7 +657,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
           },
           instructions:
             "Library indexed. Enable 'Local Document Sources' in plugin settings " +
-            "to include these documents in Deep Research results. " +
+            "to include these documents in 'Research' results. " +
             `Priority: ${library.priority} - ` +
             (library.priority === "proprietary"
               ? "will be searched first, before all other sources."
@@ -754,7 +754,7 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
       "(text from surrounding chunks for richer understanding). " +
       "Supports progressive mode: searches proprietary libraries first, then internal, " +
       "then reference, then general - stopping early when enough results are found. " +
-      "For full research that blends local and web sources, use 'Deep Research' with Local Document Sources enabled.",
+      "For full research that blends local and web sources, use 'Research' with Local Document Sources enabled.",
     parameters: {
       query: z
         .string()

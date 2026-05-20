@@ -18,13 +18,13 @@ import {
 setServers(DNS_RESOLVERS);
 
 const UA_POOL: ReadonlyArray<string> = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.4 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0",
 ];
 
 function randomUA(): string {
@@ -34,7 +34,8 @@ function randomUA(): string {
 export function buildBrowserHeaders(url: string): Record<string, string> {
   const host = safeHostname(url);
   const ua = randomUA();
-  return {
+
+  const headers: Record<string, string> = {
     "User-Agent": ua,
     Accept:
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -50,13 +51,28 @@ export function buildBrowserHeaders(url: string): Record<string, string> {
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "cross-site",
     "Sec-Fetch-User": "?1",
-    "Sec-CH-UA":
-      '"Chromium";v="134", "Google Chrome";v="134", "Not:A-Brand";v="24"',
-    "Sec-CH-UA-Mobile": "?0",
-    "Sec-CH-UA-Platform": '"Windows"',
     "Cache-Control": "max-age=0",
     Priority: "u=0, i",
   };
+
+  // Add Client Hints for Chromium-based browsers
+  if (ua.includes("Chrome") || ua.includes("Edg")) {
+    const isEdge = ua.includes("Edg");
+    const version = isEdge ? "147" : "148";
+    const platform = ua.includes("Windows")
+      ? '"Windows"'
+      : ua.includes("Macintosh")
+        ? '"macOS"'
+        : '"Linux"';
+
+    headers["Sec-CH-UA"] = isEdge
+      ? `"Microsoft Edge";v="${version}", "Chromium";v="${version}", "Not:A-Brand";v="24"`
+      : `"Google Chrome";v="${version}", "Chromium";v="${version}", "Not:A-Brand";v="24"`;
+    headers["Sec-CH-UA-Mobile"] = "?0";
+    headers["Sec-CH-UA-Platform"] = platform;
+  }
+
+  return headers;
 }
 
 export function buildDDGHeaders(): Record<string, string> {

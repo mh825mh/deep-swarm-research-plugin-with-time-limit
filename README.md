@@ -6,7 +6,7 @@ Autonomous deep research for LM Studio. A swarm of specialized workers searches 
 
 ## Tools
 
-### # Deep Research
+### # Research
 The main tool. Give it a topic, get back a full Markdown report with AI-written analysis, citations, contradiction detection, and a coverage breakdown across 12 research dimensions. When local document sources are enabled, workers search your RAG libraries progressively - proprietary first, web to fill gaps.
 
 **Parameters:**
@@ -15,13 +15,13 @@ The main tool. Give it a topic, get back a full Markdown report with AI-written 
 - `depthOverride` - `"shallow"` / `"standard"` / `"deep"` / `"deeper"` / `"exhaustive"`
 - `contentLimitOverride` - chars per page (1K-20K, auto-scales with depth)
 
-### # Research Search
+### # Search
 Scored DuckDuckGo results with domain authority tiers and snippet extraction.
 
-### # Research Read Page
+### # Read Page
 Fetch and extract a single URL. Handles PDFs automatically.
 
-### # Research Multi-Read
+### # Multi-Read
 Batch-fetch up to 10 URLs concurrently.
 
 ---
@@ -75,9 +75,6 @@ Persist the entire RAG index to a JSON file on disk.
 
 ### # Load Index
 Restore a previously saved index - instant library access without re-scanning.
-
-### # Legacy
-The previous `Local Docs Add/List/Remove/Search Collection` tools still work as aliases for backward compatibility.
 
 **Supported file types:** `.txt`, `.md`, `.html`, `.csv`, `.json`, `.xml`, `.log`, and many more.
 
@@ -196,5 +193,7 @@ When the user asks for research or wants to understand a topic in depth, use the
 ```
 
 ---
+
+## License
 
 MIT License

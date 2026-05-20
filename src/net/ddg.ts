@@ -294,7 +294,7 @@ async function tryLiteEndpoint(
     body += `&s=${offset}&dc=${Math.floor(offset / maxResults) + 1}`;
   }
 
-  console.log(`(Lite) Fetching '${url}' (POST)`);
+  console.log(`(Lite) Fetching '${url}?${body}' (POST)`);
   const html = await fetchInsecure(url, {
     ...buildDDGHeaders(),
     "Content-Type": "application/x-www-form-urlencoded",
