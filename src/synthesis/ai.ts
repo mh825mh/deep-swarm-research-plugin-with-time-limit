@@ -13,6 +13,7 @@ import {
   AI_CONTRADICTION_TEMPERATURE,
   AI_CONTRADICTION_TIMEOUT_MS,
   CONTRADICTION_SOURCE_CHARS,
+  SYSTEM_INSTRUCTIONS,
 } from "../constants";
 
 async function callModel(
@@ -36,10 +37,16 @@ async function callModel(
     if (!Array.isArray(models) || models.length === 0) return null;
 
     const model = await client.llm.model(models[0].identifier);
-    const stream = model.respond([{ role: "user", content: prompt }], {
-      maxTokens,
-      temperature,
-    });
+    const stream = model.respond(
+      [
+        { role: "system", content: SYSTEM_INSTRUCTIONS },
+        { role: "user", content: prompt },
+      ],
+      {
+        maxTokens,
+        temperature,
+      },
+    );
 
     let result = "";
     for await (const chunk of stream) result += chunk.content ?? "";

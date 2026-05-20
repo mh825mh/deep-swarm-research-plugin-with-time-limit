@@ -8,8 +8,6 @@ import * as crypto from "node:crypto";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 
-import { installBrowserPolyfills } from "../net/pdf-extractor";
-
 const turndownService = new TurndownService();
 
 let _storePDFParse: any = null;
@@ -18,7 +16,6 @@ let _storePDFAttempted = false;
 function getStorePDFParse(): any {
   if (_storePDFAttempted) return _storePDFParse;
   _storePDFAttempted = true;
-  installBrowserPolyfills(); // must precede require("pdf-parse")
   try {
     const pdfMod = require("pdf-parse");
     _storePDFParse = pdfMod.PDFParse ?? pdfMod.default ?? pdfMod;
