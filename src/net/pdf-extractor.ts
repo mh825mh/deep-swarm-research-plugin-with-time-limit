@@ -13,100 +13,15 @@ import * as os from "node:os";
 import { ExtractedPage, Outlink } from "../types";
 import { DESCRIPTION_FALLBACK_CHARS } from "../constants";
 
-/**
- * Installs stub implementations of the three browser globals that pdf.js
- * references during module initialisation.  Must be called before the first
- * require("pdf-parse").  Safe to call multiple times.
- */
-export function installBrowserPolyfills(): void {
-  const g = globalThis as any;
-
-  if (!g.DOMMatrix) {
-    g.DOMMatrix = class DOMMatrix {
-      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-      m11 = 1; m12 = 0; m13 = 0; m14 = 0;
-      m21 = 0; m22 = 1; m23 = 0; m24 = 0;
-      m31 = 0; m32 = 0; m33 = 1; m34 = 0;
-      m41 = 0; m42 = 0; m43 = 0; m44 = 1;
-      is2D = true; isIdentity = true;
-      constructor(_init?: string | number[]) { }
-      multiply(_m: any) { return new g.DOMMatrix(); }
-      translate(_tx = 0, _ty = 0, _tz = 0) { return new g.DOMMatrix(); }
-      scale(_sx = 1, _sy?: number, _sz?: number, _ox = 0, _oy = 0, _oz = 0) { return new g.DOMMatrix(); }
-      scale3d(_s = 1, _ox = 0, _oy = 0, _oz = 0) { return new g.DOMMatrix(); }
-      rotate(_rx = 0, _ry?: number, _rz?: number) { return new g.DOMMatrix(); }
-      rotateAxisAngle(_x = 0, _y = 0, _z = 0, _angle = 0) { return new g.DOMMatrix(); }
-      skewX(_sx = 0) { return new g.DOMMatrix(); }
-      skewY(_sy = 0) { return new g.DOMMatrix(); }
-      flipX() { return new g.DOMMatrix(); }
-      flipY() { return new g.DOMMatrix(); }
-      inverse() { return new g.DOMMatrix(); }
-      transformPoint(p?: any) { return p ?? { x: 0, y: 0, z: 0, w: 1 }; }
-      toFloat32Array() { return new Float32Array(16); }
-      toFloat64Array() { return new Float64Array(16); }
-      toJSON() { return {}; }
-      toString() { return "matrix(1, 0, 0, 1, 0, 0)"; }
-    };
-  }
-
-  if (!g.ImageData) {
-    g.ImageData = class ImageData {
-      readonly data: Uint8ClampedArray;
-      readonly width: number;
-      readonly height: number;
-      readonly colorSpace = "srgb";
-      constructor(
-        dataOrWidth: Uint8ClampedArray | number,
-        widthOrHeight: number,
-        heightOrSettings?: number | { colorSpace?: string },
-      ) {
-        if (typeof dataOrWidth === "number") {
-          const h =
-            typeof heightOrSettings === "number" ? heightOrSettings : widthOrHeight;
-          this.data = new Uint8ClampedArray(dataOrWidth * h * 4);
-          this.width = dataOrWidth;
-          this.height = h;
-        } else {
-          this.data = dataOrWidth;
-          this.width = widthOrHeight;
-          this.height =
-            typeof heightOrSettings === "number"
-              ? heightOrSettings
-              : Math.floor(dataOrWidth.length / 4 / widthOrHeight);
-        }
-      }
-    };
-  }
-
-  if (!g.Path2D) {
-    g.Path2D = class Path2D {
-      constructor(_path?: string | any) { }
-      addPath(_path: any, _transform?: any) { }
-      closePath() { }
-      moveTo(_x: number, _y: number) { }
-      lineTo(_x: number, _y: number) { }
-      arc(_cx: number, _cy: number, _r: number, _sa: number, _ea: number, _ccw?: boolean) { }
-      arcTo(_x1: number, _y1: number, _x2: number, _y2: number, _r: number) { }
-      ellipse(_cx: number, _cy: number, _rx: number, _ry: number, _rot: number, _sa: number, _ea: number, _ccw?: boolean) { }
-      bezierCurveTo(_cp1x: number, _cp1y: number, _cp2x: number, _cp2y: number, _x: number, _y: number) { }
-      quadraticCurveTo(_cpx: number, _cpy: number, _x: number, _y: number) { }
-      rect(_x: number, _y: number, _w: number, _h: number) { }
-      roundRect(_x: number, _y: number, _w: number, _h: number, _radii?: any) { }
-    };
-  }
-}
-
 let _PDFParse: any = null;
 let _attempted = false;
 
 /**
  * Returns the PDFParse constructor from pdf-parse, or null if unavailable.
- * Installs polyfills before the first require() call.
  */
 function getPDFParse(): any {
   if (_attempted) return _PDFParse;
   _attempted = true;
-  installBrowserPolyfills();
   try {
     const mod = require("pdf-parse");
     _PDFParse = mod.PDFParse ?? mod.default?.PDFParse ?? mod.default ?? mod;

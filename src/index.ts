@@ -3,6 +3,7 @@
  * LM Studio plugin entry point.
  */
 
+import "./polyfills";
 import { PluginContext, ChatMessage } from "@lmstudio/sdk";
 import { configSchematics } from "./config";
 import { toolsProvider } from "./toolsProvider";
