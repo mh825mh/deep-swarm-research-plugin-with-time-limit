@@ -2,7 +2,7 @@
 
 Autonomous deep research for LM Studio. A swarm of specialized workers searches your **local libraries** and the web, then synthesizes everything into a structured report - one tool call, no API keys.
 
-Deep Research now supports a configurable max session time. Each run can be capped by a user‑defined wall‑clock limit, and the session is cleanly aborted once that limit is reached, while still respecting LM Studio’s own tool timeout and user cancel actions.
+Deep Research now supports a configurable max session time. Each run can be capped by a user‑defined wall‑clock limit, and the session is cleanly aborted once that limit is reached, while still respecting LM Studio’s own tool timeout and user cancel actions. So once your timer aborts the signal, future rounds stop, but any workers already running in the current round still finish before runSwarm resolves
 
 ---
 
