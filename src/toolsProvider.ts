@@ -71,6 +71,33 @@ export async function toolsProvider(
   const deepResearchTool = tool({
     name: "Research",
     description: `Performs autonomous, multi-round deep web research using a Agent Swarm with AI-powered synthesis.
+    parameters: {
+  topic: z.string().min(3).describe(/* ... */),
+  focusAreas: z.array(z.string()).max(6).optional().describe(/* ... */),
+  depthOverride: z
+    .enum(["shallow", "standard", "deep", "deeper", "exhaustive"])
+    .optional()
+    .describe(/* ... */),
+  contentLimitOverride: z
+    .number()
+    .int()
+    .min(CONTENT_LIMIT_MIN)
+    .max(CONTENT_LIMIT_MAX)
+    .optional()
+    .describe(/* ... */),
+
+  // NEW:
+  sessionTimeoutMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(120)
+    .optional()
+    .describe(
+      "Override max wall-clock time for this Deep Research call only. " +
+      "Session will be aborted once this limit is reached."
+    ),
+},
 
 HOW IT WORKS:
   1. AI TASK DECOMPOSITION: The loaded model analyses the topic and dynamically creates specialised worker agents with roles. Each worker gets custom queries tailored to its assignment.
@@ -151,58 +178,109 @@ When Local Document Sources is enabled in settings, your indexed RAG libraries a
         ),
     },
 
-    implementation: async (
-      { topic, focusAreas, depthOverride, contentLimitOverride },
-      { status, warn, signal },
-    ) => {
-      const cfg = readConfig(ctl);
+    // src/toolsProvider.ts
 
-      const researchCfg: ResearchConfig = {
-        topic,
-        focusAreas: focusAreas ?? [],
-        depthPreset: (depthOverride as DepthPreset) ?? cfg.depthPreset,
-        contentLimitPerPage: contentLimitOverride ?? cfg.contentLimitPerPage,
-        enableLinkFollowing: cfg.enableLinkFollowing,
-        enableAIPlanning: cfg.enableAIPlanning,
-        safeSearch: cfg.safeSearch,
-        enableLocalSources: cfg.enableLocalSources,
-      };
+implementation: async (
+  { topic, focusAreas, depthOverride, contentLimitOverride, sessionTimeoutMinutes },
+  { status, warn, signal },   // host-provided signal
+) => {
+  const cfg = readConfig(ctl);
 
-      try {
-        const result = await runDeepResearch(researchCfg, status, warn, signal);
+  const researchCfg: ResearchConfig = {
+    topic,
+    focusAreas: focusAreas ?? [],
+    depthPreset: (depthOverride as DepthPreset) ?? cfg.depthPreset,
+    contentLimitPerPage: contentLimitOverride ?? cfg.contentLimitPerPage,
+    enableLinkFollowing: cfg.enableLinkFollowing,
+    enableAIPlanning: cfg.enableAIPlanning,
+    safeSearch: cfg.safeSearch,
+    enableLocalSources: cfg.enableLocalSources,
+  };
 
-        return {
-          topic,
-          totalRounds: result.totalRounds,
-          totalSources: result.totalSources,
-          queriesUsed: result.queriesUsed,
-          coveredDimensions: result.report.coveredDims,
-          gapDimensions: result.report.gapDims,
-          hasAISynthesis: !!result.report.aiSynthesis,
-          contradictions: result.report.contradictions.length,
-          report: result.report.markdown,
-          sourceIndex: result.report.sources.map((s) => ({
-            index: s.index,
-            title: s.title,
-            url: s.url,
-            published: s.published,
-            domainScore: s.domainScore,
-            tier: s.tier,
-            workerRole: s.workerRole,
-            workerLabel: s.workerLabel,
-            relevance: Math.round(s.relevanceScore * 100),
-            origin: s.origin,
-            excerpt: s.description.slice(0, 200),
-          })),
-        };
-      } catch (err: unknown) {
-        if (isAbortError(err) || signal.aborted)
-          return "Research cancelled by user.";
-        const msg = errorMessage(err);
-        warn(`Deep research error: ${msg}`);
-        return `Error during deep research: ${msg}`;
+  // Decide timeout in minutes
+  const timeoutMinutes =
+    sessionTimeoutMinutes ?? (cfg as any).maxSessionMinutes ?? 30;
+
+  // Build a session-level AbortController
+  const sessionController = new AbortController();
+  const sessionSignal = sessionController.signal;
+
+  // Bridge host cancellations into our controller
+  if (signal.aborted) {
+    sessionController.abort();
+  } else {
+    signal.addEventListener(
+      "abort",
+      () => {
+        sessionController.abort();
+      },
+      { once: true },
+    );
+  }
+
+  // Start wall-clock timer
+  const timeoutMs = timeoutMinutes * 60_000;
+  const timeoutId = setTimeout(() => {
+    if (!sessionSignal.aborted) {
+      status(
+        `\n Max session time (${timeoutMinutes} min) reached — aborting deep research.`,
+      );
+      sessionController.abort();
+    }
+  }, timeoutMs);
+
+  try {
+    const result = await runDeepResearch(
+      researchCfg,
+      status,
+      warn,
+      sessionSignal,  // NOTE: use sessionSignal, not the original
+    );
+
+    clearTimeout(timeoutId);
+
+    return {
+      topic,
+      totalRounds: result.totalRounds,
+      totalSources: result.totalSources,
+      queriesUsed: result.queriesUsed,
+      coveredDimensions: result.report.coveredDims,
+      gapDimensions: result.report.gapDims,
+      hasAISynthesis: !!result.report.aiSynthesis,
+      contradictions: result.report.contradictions.length,
+      report: result.report.markdown,
+      sourceIndex: result.report.sources.map((s) => ({
+        index: s.index,
+        title: s.title,
+        url: s.url,
+        published: s.published,
+        domainScore: s.domainScore,
+        tier: s.tier,
+        workerRole: s.workerRole,
+        workerLabel: s.workerLabel,
+        relevance: Math.round(s.relevanceScore * 100),
+        origin: s.origin,
+        excerpt: s.description.slice(0, 200),
+      })),
+    };
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+
+    // Distinguish host cancel vs our timeout
+    if (isAbortError(err)) {
+      if (signal.aborted) {
+        // Host / user cancel
+        return "Research cancelled by user.";
       }
-    },
+      // Our own time cap
+      return `Research stopped after ${timeoutMinutes} minutes (session time limit reached).`;
+    }
+
+    const msg = errorMessage(err);
+    warn(`Deep research error: ${msg}`);
+    return `Error during deep research: ${msg}`;
+  }
+},
   });
 
   const researchSearchTool = tool({
