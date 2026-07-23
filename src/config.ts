@@ -108,4 +108,22 @@ export const configSchematics = createConfigSchematics()
     },
     "off",
   )
+    .field(
+    "maxSessionMinutes",
+    "numeric",
+    {
+      displayName: "Max Session Time (minutes)",
+      subtitle:
+        "Hard cap on wall-clock time for Deep Research runs. " +
+        "Session will be aborted once this limit is reached.",
+      min: 1,
+      max: 120,
+      int: true,
+      slider: { step: 5, min: 5, max: 120 },
+    },
+    30,  // default: 30 minutes
+  )
   .build();
+  .build();
+
+
