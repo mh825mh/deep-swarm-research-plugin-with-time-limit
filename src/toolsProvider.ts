@@ -237,7 +237,7 @@ implementation: async (
       sessionSignal,  // NOTE: use sessionSignal, not the original
     );
 
-    clearTimeout(timeoutId);
+   clearTimeout(timeoutId);
 
     return {
       topic,
